@@ -1,4 +1,5 @@
 const std = @import("std");
+const cli = @import("cli.zig");
 
 // Utils
 const time = @import("utils/time.zig");
@@ -15,24 +16,23 @@ const connection = @import("db/connection.zig");
 const schema = @import("db/schema.zig");
 const queries = @import("db/queries.zig");
 
+// Commands
+const roadmap_cmd = @import("commands/roadmap.zig");
+const task_cmd = @import("commands/task.zig");
+const sprint_cmd = @import("commands/sprint.zig");
+
+// Aliases for clarity
+const roadmap_model = @import("models/roadmap.zig");
+
 pub fn main() !void {
-    // Test time utility
-    const allocator = std.heap.page_allocator;
-    const now = time.nowUtc(allocator) catch "error";
-    defer if (!std.mem.eql(u8, now, "error")) allocator.free(now);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    // Print basic info
-    const msg = "LRoadmap CLI - Version 1.0.0-draft\nRun with: rmp --help\n\n";
-    _ = std.posix.write(1, msg) catch {};
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
-    const msg2 = "Utils loaded: time, path, json\n";
-    _ = std.posix.write(1, msg2) catch {};
-
-    const msg3 = "Models loaded: task, sprint, roadmap\n";
-    _ = std.posix.write(1, msg3) catch {};
-
-    const msg4 = "Database loaded: connection, schema, queries\n";
-    _ = std.posix.write(1, msg4) catch {};
+    try cli.run(allocator, args);
 }
 
 // ============== TESTS ==============
@@ -43,8 +43,12 @@ test "all modules compile" {
     _ = json;
     _ = task;
     _ = sprint;
-    _ = roadmap;
+    _ = roadmap_model;
     _ = connection;
     _ = schema;
     _ = queries;
+    _ = roadmap_cmd;
+    _ = task_cmd;
+    _ = sprint_cmd;
+    _ = cli;
 }

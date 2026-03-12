@@ -169,3 +169,37 @@ All commands, data formats, and SQL queries are fully specified in the `SPEC/` d
 - `SPEC/DATABASE.md` - SQLite schema and queries
 - `SPEC/DATA_FORMATS.md` - JSON output formats and enums
 - `SPEC/COMMANDS_REFERENCE.md` - Quick command reference with examples
+
+## Zig 0.15 API Changes
+
+When working with this codebase, note these Zig 0.15 changes:
+
+### ArrayList (Unmanaged Pattern)
+```zig
+// OLD: Managed ArrayList
+var list = std.ArrayList(T).init(allocator);
+defer list.deinit();
+try list.append(item);
+
+// NEW: Unmanaged ArrayList
+var list: std.array_list.Aligned(T, null) = .empty;
+defer list.deinit(allocator);
+try list.append(allocator, item);
+```
+
+### Error Handling
+```zig
+// When error value is not used
+catch { /* handle error */ }
+
+// When error value is used
+catch |err| {
+    if (err == error.FileNotFound) { ... }
+}
+```
+
+### SQLite C Bindings
+Always use `@ptrCast` when passing connection to C functions:
+```zig
+const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), ...);
+```

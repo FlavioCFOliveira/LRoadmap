@@ -10,14 +10,13 @@ pub const ISO8601_MAX_LEN = 30;
 /// Caller owns the returned memory.
 pub fn nowUtc(allocator: std.mem.Allocator) ![]const u8 {
     const timestamp = std.time.timestamp();
-    return formatTimestamp(allocator, timestamp);
+    return formatTimestampSeconds(allocator, timestamp);
 }
 
-/// Formats a Unix timestamp to ISO 8601 UTC string.
+/// Formats a Unix timestamp (in seconds) to ISO 8601 UTC string.
 /// Caller owns the returned memory.
-pub fn formatTimestamp(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
-    const millis = @mod(timestamp, 1000);
-    const seconds = @divTrunc(timestamp, 1000);
+pub fn formatTimestampSeconds(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
+    const seconds = timestamp;
 
     // Convert seconds to date/time components manually
     const days_since_epoch = @divTrunc(seconds, 86400);
@@ -61,7 +60,7 @@ pub fn formatTimestamp(allocator: std.mem.Allocator, timestamp: i64) ![]const u8
         hours,
         minutes,
         secs,
-        @abs(millis),
+        @as(i64, 0), // milliseconds
     });
 }
 
@@ -103,10 +102,10 @@ test "nowUtc returns valid ISO 8601 string" {
     try std.testing.expect(result.len > 0);
 }
 
-test "formatTimestamp produces correct format" {
+test "formatTimestampSeconds produces correct format" {
     const allocator = std.testing.allocator;
 
-    const result = try formatTimestamp(allocator, 0);
+    const result = try formatTimestampSeconds(allocator, 0);
     defer allocator.free(result);
 
     // Just check it has content

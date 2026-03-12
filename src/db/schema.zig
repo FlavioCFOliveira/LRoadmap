@@ -28,7 +28,43 @@ pub fn schemaExists(conn: Connection) !bool {
     return true;
 }
 
-// ============== DDL STATEMENTS ==============
+/// Gets the schema version from the database
+pub fn getSchemaVersion(conn: Connection, allocator: std.mem.Allocator) ![]const u8 {
+    const c = @cImport({
+        @cInclude("sqlite3.h");
+    });
+
+    const sql = "SELECT value FROM _metadata WHERE key = 'schema_version' LIMIT 1";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_ROW) return error.NotFound;
+
+    const value = std.mem.span(c.sqlite3_column_text(stmt, 0));
+    return allocator.dupe(u8, value);
+}
+
+/// Gets the application name from the database
+pub fn getApplication(conn: Connection, allocator: std.mem.Allocator) ![]const u8 {
+    const c = @cImport({
+        @cInclude("sqlite3.h");
+    });
+
+    const sql = "SELECT value FROM _metadata WHERE key = 'application' LIMIT 1";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_ROW) return error.NotFound;
+
+    const value = std.mem.span(c.sqlite3_column_text(stmt, 0));
+    return allocator.dupe(u8, value);
+}
 
 /// DDL for tasks table
 pub const CREATE_TASKS_TABLE =
