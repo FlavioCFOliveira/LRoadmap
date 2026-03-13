@@ -97,16 +97,10 @@ rmp road ls
 
 **JSON Output:**
 ```json
-{
-  "success": true,
-  "data": {
-    "count": 3,
-    "roadmaps": [
-      {"name": "project1", "path": "~/.roadmaps/project1.db", "size": 24576},
-      {"name": "project2", "path": "~/.roadmaps/project2.db", "size": 8192}
-    ]
-  }
-}
+[
+  {"name": "project1", "path": "~/.roadmaps/project1.db", "size": 24576},
+  {"name": "project2", "path": "~/.roadmaps/project2.db", "size": 8192}
+]
 ```
 
 ### Create Roadmap
@@ -125,17 +119,8 @@ rmp roadmap create <name> --force
 - Maximum 50 characters
 - Error if already exists (without `--force`)
 
-**JSON Output (success):**
-```json
-{
-  "success": true,
-  "data": {
-    "name": "project1",
-    "path": "~/.roadmaps/project1.db",
-    "created_at": "2026-03-12T14:30:00.000Z"
-  }
-}
-```
+**Output (success):**
+no output, just the exit code 0
 
 **Error Output:**
 ```
@@ -152,16 +137,8 @@ rmp roadmap delete <name>
 
 **Validation:** Verifies if valid SQLite before removing.
 
-**JSON Output:**
-```json
-{
-  "success": true,
-  "data": {
-    "name": "project1",
-    "removed_at": "2026-03-12T14:35:00.000Z"
-  }
-}
-```
+**Output (success):**
+no output, just the exit code 0
 
 ### Select Roadmap (Optional)
 
@@ -199,26 +176,17 @@ rmp task list -r <name> -s DOING
 
 **JSON Output:**
 ```json
-{
-  "success": true,
-  "data": {
-    "roadmap": "project1",
-    "count": 5,
-    "tasks": [
-      {
-        "id": 1,
-        "priority": 9,
-        "severity": 3,
-        "status": "BACKLOG",
-        "description": "Implement authentication",
-        "action": "Create JWT auth system",
-        "expected_result": "Functional login",
-        "created_at": "2026-03-12T10:00:00.000Z",
-        "completed_at": null
-      }
-    ]
-  }
-}
+[{
+  "id": 1,
+  "priority": 9,
+  "severity": 3,
+  "status": "BACKLOG",
+  "description": "Implement authentication",
+  "action": "Create JWT auth system",
+  "expected_result": "Functional login",
+  "created_at": "2026-03-12T10:00:00.000Z",
+  "completed_at": null
+}]
 ```
 
 ### Create Task
@@ -246,20 +214,7 @@ rmp task create --roadmap <name> \
 
 **JSON Output:**
 ```json
-{
-  "success": true,
-  "data": {
-    "id": 42,
-    "priority": 5,
-    "severity": 3,
-    "status": "BACKLOG",
-    "description": "New feature",
-    "action": "Implement X",
-    "expected_result": "Y works",
-    "created_at": "2026-03-12T15:00:00.000Z",
-    "completed_at": null
-  }
-}
+{"id": 42}
 ```
 
 ### Get Task(s)
@@ -291,32 +246,8 @@ rmp task stat -r <name> 5,8,12 COMPLETED
 
 **States:** BACKLOG, SPRINT, DOING, TESTING, COMPLETED
 
-**JSON Output (multiple):**
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "success": true,
-      "data": {
-        "id": 1,
-        "previous_status": "SPRINT",
-        "new_status": "DOING",
-        "changed_at": "2026-03-13T00:08:56.000Z"
-      }
-    },
-    {
-      "success": true,
-      "data": {
-        "id": 2,
-        "previous_status": "SPRINT",
-        "new_status": "DOING",
-        "changed_at": "2026-03-13T00:08:56.000Z"
-      }
-    }
-  ]
-}
-```
+**Output (success):**
+no output, just the exit code 0
 
 ### Change Priority (Bulk Support)
 
@@ -332,8 +263,8 @@ rmp task prio -r <name> 1,2,3,10 5
 
 **Priority:** 0-9. Urgency/Pertinence: 0 = low urgency, 9 = maximum urgency.
 
-**JSON Output (bulk):**
-Same nested `results` format as status change for multiple IDs.
+**Output (success):**
+no output, just the exit code 0
 
 ### Change Severity (Bulk Support)
 
@@ -349,8 +280,8 @@ rmp task sev -r <name> 1,2,3,10 9
 
 **Severity:** 0-9. Technical impact: 0 = minimal impact, 9 = critical impact.
 
-**JSON Output (bulk):**
-Same nested `results` format as status change for multiple IDs.
+**Output (success):**
+no output, just the exit code 0
 
 ### Remove Task(s)
 
@@ -396,17 +327,14 @@ rmp sprint get -r <name> 1
 **JSON Output:**
 ```json
 {
-  "success": true,
-  "data": {
-    "id": 1,
-    "status": "OPEN",
-    "description": "Sprint 1 - Setup",
-    "tasks": [1, 2, 3],
-    "task_count": 3,
-    "created_at": "2026-03-12T09:00:00.000Z",
-    "started_at": "2026-03-12T10:00:00.000Z",
-    "closed_at": null
-  }
+  "id": 1,
+  "status": "OPEN",
+  "description": "Sprint 1 - Setup",
+  "tasks": [1, 2, 3],
+  "task_count": 3,
+  "created_at": "2026-03-12T09:00:00.000Z",
+  "started_at": "2026-03-12T10:00:00.000Z",
+  "closed_at": null
 }
 ```
 
@@ -423,52 +351,44 @@ rmp sprint tasks -r <name> 1 -s COMPLETED
 
 **JSON Output:**
 ```json
-{
-  "success": true,
-  "data": {
-    "roadmap": "project1",
-    "sprint_id": 1,
-    "count": 5,
-    "tasks": [
-      {
-        "id": 10,
-        "priority": 9,
-        "severity": 8,
-        "status": "DOING",
-        "description": "Critical security fix",
-        "action": "Patch vulnerability",
-        "expected_result": "System secure",
-        "created_at": "2026-03-12T10:00:00.000Z",
-        "completed_at": null
-      },
-      {
-        "id": 5,
-        "priority": 9,
-        "severity": 5,
-        "status": "SPRINT",
-        "description": "Feature A",
-        "action": "Implement core logic",
-        "expected_result": "Tests pass",
-        "created_at": "2026-03-12T09:00:00.000Z",
-        "completed_at": null
-      },
-      {
-        "id": 3,
-        "priority": 7,
-        "severity": 9,
-        "status": "DOING",
-        "description": "Database optimization",
-        "action": "Add indexes",
-        "expected_result": "Queries < 100ms",
-        "created_at": "2026-03-11T14:00:00.000Z",
-        "completed_at": null
-      }
-    ]
+[
+  {
+    "id": 10,
+    "priority": 9,
+    "severity": 8,
+    "status": "DOING",
+    "description": "Critical security fix",
+    "action": "Patch vulnerability",
+    "expected_result": "System secure",
+    "created_at": "2026-03-12T10:00:00.000Z",
+    "completed_at": null
+  },
+  {
+    "id": 5,
+    "priority": 9,
+    "severity": 5,
+    "status": "SPRINT",
+    "description": "Feature A",
+    "action": "Implement core logic",
+    "expected_result": "Tests pass",
+    "created_at": "2026-03-12T09:00:00.000Z",
+    "completed_at": null
+  },
+  {
+    "id": 3,
+    "priority": 7,
+    "severity": 9,
+    "status": "DOING",
+    "description": "Database optimization",
+    "action": "Add indexes",
+    "expected_result": "Queries < 100ms",
+    "created_at": "2026-03-11T14:00:00.000Z",
+    "completed_at": null
   }
-}
+]
 ```
 
-**Ordering:** Tasks are sorted by `priority DESC`, then `severity DESC` (highest urgency/impact first).
+**Ordering:** Tasks are sorted by, `severity DESC` then `priority DESC` (highest impact/urgency first).
 
 ### Add Tasks to Sprint
 
@@ -537,24 +457,21 @@ rmp sprint stats -r <name> 1
 **JSON Output:**
 ```json
 {
-  "success": true,
-  "data": {
-    "sprint_id": 1,
-    "description": "Sprint 1 - Setup",
-    "status": "OPEN",
-    "total_tasks": 10,
-    "by_status": {
-      "BACKLOG": 0,
-      "SPRINT": 2,
-      "DOING": 3,
-      "TESTING": 2,
-      "COMPLETED": 3
-    },
-    "completion_percentage": 30,
-    "created_at": "2026-03-12T09:00:00.000Z",
-    "started_at": "2026-03-12T10:00:00.000Z",
-    "closed_at": null
-  }
+  "sprint_id": 1,
+  "description": "Sprint 1 - Setup",
+  "status": "OPEN",
+  "total_tasks": 10,
+  "by_status": {
+    "BACKLOG": 0,
+    "SPRINT": 2,
+    "DOING": 3,
+    "TESTING": 2,
+    "COMPLETED": 3
+  },
+  "completion_percentage": 30,
+  "created_at": "2026-03-12T09:00:00.000Z",
+  "started_at": "2026-03-12T10:00:00.000Z",
+  "closed_at": null
 }
 ```
 
@@ -612,43 +529,40 @@ rmp audit list -r <name> --entity-type TASK --operation TASK_STATUS_CHANGE --lim
 
 **JSON Output:**
 ```json
-{
-  "success": true,
-  "data": {
-    "roadmap": "project1",
-    "count": 3,
-    "total": 150,
-    "filters": {
-      "operation": null,
-      "entity_type": null,
-      "entity_id": null,
-      "since": null,
-      "until": null
+ {
+  "roadmap": "project1",
+  "count": 3,
+  "total": 150,
+  "filters": {
+    "operation": null,
+    "entity_type": null,
+    "entity_id": null,
+    "since": null,
+    "until": null
+  },
+  "entries": [
+    {
+      "id": 152,
+      "operation": "TASK_STATUS_CHANGE",
+      "entity_type": "TASK",
+      "entity_id": 42,
+      "performed_at": "2026-03-13T10:30:00.000Z"
     },
-    "entries": [
-      {
-        "id": 152,
-        "operation": "TASK_STATUS_CHANGE",
-        "entity_type": "TASK",
-        "entity_id": 42,
-        "performed_at": "2026-03-13T10:30:00.000Z"
-      },
-      {
-        "id": 151,
-        "operation": "SPRINT_START",
-        "entity_type": "SPRINT",
-        "entity_id": 1,
-        "performed_at": "2026-03-13T09:00:00.000Z"
-      },
-      {
-        "id": 150,
-        "operation": "TASK_CREATE",
-        "entity_type": "TASK",
-        "entity_id": 42,
-        "performed_at": "2026-03-13T08:45:00.000Z"
-      }
-    ]
-  }
+    {
+      "id": 151,
+      "operation": "SPRINT_START",
+      "entity_type": "SPRINT",
+      "entity_id": 1,
+      "performed_at": "2026-03-13T09:00:00.000Z"
+    },
+    {
+      "id": 150,
+      "operation": "TASK_CREATE",
+      "entity_type": "TASK",
+      "entity_id": 42,
+      "performed_at": "2026-03-13T08:45:00.000Z"
+    }
+  ]
 }
 ```
 
@@ -674,40 +588,37 @@ rmp audit hist -r <name> -e SPRINT 1
 **JSON Output:**
 ```json
 {
-  "success": true,
-  "data": {
-    "roadmap": "project1",
-    "entity_type": "TASK",
-    "entity_id": 42,
-    "count": 5,
-    "entries": [
-      {
-        "id": 152,
-        "operation": "TASK_STATUS_CHANGE",
-        "performed_at": "2026-03-13T10:30:00.000Z"
-      },
-      {
-        "id": 148,
-        "operation": "TASK_PRIORITY_CHANGE",
-        "performed_at": "2026-03-12T16:00:00.000Z"
-      },
-      {
-        "id": 145,
-        "operation": "TASK_SEVERITY_CHANGE",
-        "performed_at": "2026-03-12T14:30:00.000Z"
-      },
-      {
-        "id": 143,
-        "operation": "SPRINT_ADD_TASK",
-        "performed_at": "2026-03-12T11:00:00.000Z"
-      },
-      {
-        "id": 150,
-        "operation": "TASK_CREATE",
-        "performed_at": "2026-03-13T08:45:00.000Z"
-      }
-    ]
-  }
+  "roadmap": "project1",
+  "entity_type": "TASK",
+  "entity_id": 42,
+  "count": 5,
+  "entries": [
+    {
+      "id": 152,
+      "operation": "TASK_STATUS_CHANGE",
+      "performed_at": "2026-03-13T10:30:00.000Z"
+    },
+    {
+      "id": 148,
+      "operation": "TASK_PRIORITY_CHANGE",
+      "performed_at": "2026-03-12T16:00:00.000Z"
+    },
+    {
+      "id": 145,
+      "operation": "TASK_SEVERITY_CHANGE",
+      "performed_at": "2026-03-12T14:30:00.000Z"
+    },
+    {
+      "id": 143,
+      "operation": "SPRINT_ADD_TASK",
+      "performed_at": "2026-03-12T11:00:00.000Z"
+    },
+    {
+      "id": 150,
+      "operation": "TASK_CREATE",
+      "performed_at": "2026-03-13T08:45:00.000Z"
+    }
+  ]
 }
 ```
 
@@ -731,34 +642,31 @@ rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23
 **JSON Output:**
 ```json
 {
-  "success": true,
-  "data": {
-    "roadmap": "project1",
-    "period": {
-      "since": "2026-03-01T00:00:00.000Z",
-      "until": "2026-03-13T23:59:59.000Z"
-    },
-    "total_entries": 150,
-    "by_operation": {
-      "TASK_CREATE": 25,
-      "TASK_STATUS_CHANGE": 45,
-      "TASK_PRIORITY_CHANGE": 12,
-      "TASK_SEVERITY_CHANGE": 8,
-      "TASK_DELETE": 3,
-      "SPRINT_CREATE": 5,
-      "SPRINT_START": 4,
-      "SPRINT_CLOSE": 3,
-      "SPRINT_ADD_TASK": 30,
-      "SPRINT_REMOVE_TASK": 15,
-      "SPRINT_REOPEN": 1
-    },
-    "by_entity_type": {
-      "TASK": 93,
-      "SPRINT": 57
-    },
-    "first_entry": "2026-03-01T09:00:00.000Z",
-    "last_entry": "2026-03-13T18:30:00.000Z"
-  }
+  "roadmap": "project1",
+  "period": {
+    "since": "2026-03-01T00:00:00.000Z",
+    "until": "2026-03-13T23:59:59.000Z"
+  },
+  "total_entries": 150,
+  "by_operation": {
+    "TASK_CREATE": 25,
+    "TASK_STATUS_CHANGE": 45,
+    "TASK_PRIORITY_CHANGE": 12,
+    "TASK_SEVERITY_CHANGE": 8,
+    "TASK_DELETE": 3,
+    "SPRINT_CREATE": 5,
+    "SPRINT_START": 4,
+    "SPRINT_CLOSE": 3,
+    "SPRINT_ADD_TASK": 30,
+    "SPRINT_REMOVE_TASK": 15,
+    "SPRINT_REOPEN": 1
+  },
+  "by_entity_type": {
+    "TASK": 93,
+    "SPRINT": 57
+  },
+  "first_entry": "2026-03-01T09:00:00.000Z",
+  "last_entry": "2026-03-13T18:30:00.000Z"
 }
 ```
 
