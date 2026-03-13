@@ -221,6 +221,8 @@ fn linkSQLite(b: *std.Build, exe: *std.Build.Step.Compile, _: std.Build.Resolved
                 "-DSQLITE_ENABLE_RTREE",
             },
         });
+        // Add include path for sqlite3.h
+        exe.addIncludePath(.{ .cwd_relative = source_path });
     } else {
         // Link with system SQLite
         exe.linkSystemLibrary("sqlite3");
