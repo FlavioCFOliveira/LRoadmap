@@ -44,7 +44,73 @@ See [SKILL.md](SKILL.md) for complete documentation on agentic workflows and com
 - **Output**: JSON for success, plain text for errors (typical CLI behavior)
 - **Dates**: ISO 8601 with UTC (`2026-03-12T14:30:00.000Z`)
 
-## Build Commands
+## Build System
+
+### Local Development
+
+```bash
+# Build for native architecture
+zig build
+
+# Build and run
+zig build run
+
+# Run tests
+zig build test
+
+# Clean build artifacts
+zig build clean
+```
+
+### Cross-Platform Builds via GitHub Actions
+
+O projeto inclui um workflow do GitHub Actions (`.github/workflows/build.yml`) que automaticamente compila binários para todas as arquiteturas suportadas:
+
+**Arquiteturas suportadas:**
+- Linux: x86_64, aarch64
+- macOS: x86_64, aarch64
+- Windows: x86_64, aarch64
+
+**Como funciona:**
+- Cada runner nativo (Ubuntu, macOS, Windows) compila o binário para a sua arquitetura
+- Os binários são colocados em `zig-out/[arch]/bin/rmp`
+- Artefactos são automaticamente uploaded para cada build
+- Em tags `v*`, os binários são anexados ao release
+
+**Executar manualmente:**
+```bash
+# Ir ao GitHub Actions e clicar "Run workflow"
+gh workflow run build.yml
+```
+
+**Download dos binários:**
+- Vai a Actions → Build Cross-Platform Binaries
+- Seleciona o workflow run
+- Faz download dos artefactos (ex: `rmp-aarch64-macos`, `rmp-x86_64-linux`, etc.)
+
+### Cross-Compilation Local (requer libraries SQLite)
+
+Se tiveres as bibliotecas SQLite instaladas para outras arquiteturas:
+
+```bash
+# Build para arquitetura específica
+zig build -Dtarget-arch=x86_64_linux
+
+# Individual targets
+zig build build-x86_64-linux
+zig build build-aarch64-linux
+zig build build-x86_64-macos
+zig build build-aarch64-macos
+zig build build-x86_64-windows
+zig build build-aarch64-windows
+
+# Build para todas as arquiteturas
+zig build build-all
+```
+
+**Nota:** O cross-compilation local requer SQLite instalado para a plataforma alvo. O workflow do GitHub Actions é o método recomendado para obter binários para todas as plataformas.
+
+## Build Commands (Legacy)
 
 ### Native Build (Default)
 ```bash
