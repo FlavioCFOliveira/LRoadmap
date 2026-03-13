@@ -28,7 +28,8 @@ assert_error() {
     local message="$3"
 
     local out=$($cmd 2>&1)
-    local actual_code=$(echo "$out" | jq -r ".error.code")
+    # Error responses now have .code directly (no .error wrapper)
+    local actual_code=$(echo "$out" | jq -r ".code")
 
     if [ "$actual_code" == "$expected_code" ]; then
         echo -e "  [${GREEN}PASS${NC}] $message"

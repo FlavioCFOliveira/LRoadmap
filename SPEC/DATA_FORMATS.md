@@ -33,23 +33,26 @@ Including:
 
 ### Success Response
 
+Success responses are the direct result object, without any wrapper:
+
 ```json
-{
-  "success": true,
-  "data": { /* command-specific payload */ }
-}
+{ /* command-specific payload directly */ }
 ```
+
+**Examples:**
+- Task create returns the Task object directly
+- Task list returns an array of Task objects directly
+- Sprint stats returns the stats object directly
 
 ### Error Response
 
+Error responses are the direct error object, without any wrapper:
+
 ```json
 {
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable error description",
-    "details": { /* optional, additional info */ }
-  }
+  "code": "ERROR_CODE",
+  "message": "Human-readable error description",
+  "details": { /* optional, additional info */ }
 }
 ```
 
@@ -70,6 +73,62 @@ Including:
 | `INVALID_OPERATION` | Invalid operation type for filter |
 | `DB_ERROR` | Internal SQLite error |
 | `SYSTEM_ERROR` | System error (permissions, I/O) |
+
+---
+
+## Exit Codes
+
+While all output is JSON, LRoadmap returns standard Unix exit codes for integration with shell scripts and CI/CD pipelines.
+
+### Exit Code Reference
+
+| Exit Code | Symbolic Name | Description | Typical Causes |
+|-----------|---------------|-------------|----------------|
+| `0` | `EXIT_SUCCESS` | Command succeeded | All successful operations |
+| `1` | `EXIT_FAILURE` | General failure | Database errors, unexpected failures |
+| `2` | `EXIT_MISUSE` | Command misuse | Invalid syntax, missing arguments |
+| `3` | `EXIT_NO_ROADMAP` | No roadmap selected | Commands requiring roadmap when none set |
+| `4` | `EXIT_NOT_FOUND` | Resource not found | Roadmap/task/sprint doesn't exist |
+| `5` | `EXIT_EXISTS` | Resource already exists | Duplicate names |
+| `6` | `EXIT_INVALID_DATA` | Invalid data | Validation failures (dates, ranges) |
+| `127` | `EXIT_CMD_NOT_FOUND` | Command not found | Unknown command/subcommand |
+| `130` | `EXIT_SIGINT` | Interrupted | User pressed Ctrl+C |
+
+### Error Code to Exit Code Mapping
+
+| JSON Error Code | Exit Code |
+|-----------------|-----------|
+| `INVALID_INPUT` | 2 |
+| `INVALID_DATE` | 6 |
+| `INVALID_DATE_RANGE` | 6 |
+| `INVALID_PRIORITY` | 6 |
+| `ROADMAP_NOT_FOUND` | 4 |
+| `ROADMAP_EXISTS` | 5 |
+| `TASK_NOT_FOUND` | 4 |
+| `SPRINT_NOT_FOUND` | 4 |
+| `NO_ROADMAP` | 3 |
+| `DB_ERROR` | 1 |
+| `SYSTEM_ERROR` | 1 |
+| `UNKNOWN_SUBCOMMAND` | 2 |
+
+### Script Integration
+
+```bash
+#!/bin/bash
+# Example: Check exit codes in scripts
+
+rmp roadmap use "$1"
+case $? in
+    0)  echo "Roadmap selected" ;;
+    3)  echo "No roadmap specified" ; exit 1 ;;
+    4)  echo "Roadmap not found: $1" ; exit 1 ;;
+    *)  echo "Unknown error" ; exit 1 ;;
+esac
+
+# Or use strict mode
+set -e
+rmp task add -d "New task"  # Will exit 3 if no roadmap
+```
 
 ---
 

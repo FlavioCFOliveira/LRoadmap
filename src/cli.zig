@@ -20,10 +20,41 @@ fn printStdout(comptime fmt: []const u8, args: anytype) void {
     stdout.print(fmt, args) catch {};
 }
 
-fn printError(allocator: std.mem.Allocator, code: []const u8, message: []const u8) void {
+const ExitCode = struct {
+    pub const SUCCESS = 0;
+    pub const FAILURE = 1;
+    pub const MISUSE = 2;
+    pub const NO_ROADMAP = 3;
+    pub const NOT_FOUND = 4;
+    pub const EXISTS = 5;
+    pub const INVALID_DATA = 6;
+    pub const CMD_NOT_FOUND = 127;
+    pub const SIGINT = 130;
+};
+
+fn getExitCodeForError(error_code: []const u8) u8 {
+    if (std.mem.eql(u8, error_code, "INVALID_INPUT")) return ExitCode.MISUSE;
+    if (std.mem.eql(u8, error_code, "INVALID_DATE")) return ExitCode.INVALID_DATA;
+    if (std.mem.eql(u8, error_code, "INVALID_DATE_RANGE")) return ExitCode.INVALID_DATA;
+    if (std.mem.eql(u8, error_code, "INVALID_PRIORITY")) return ExitCode.INVALID_DATA;
+    if (std.mem.eql(u8, error_code, "ROADMAP_NOT_FOUND")) return ExitCode.NOT_FOUND;
+    if (std.mem.eql(u8, error_code, "ROADMAP_EXISTS")) return ExitCode.EXISTS;
+    if (std.mem.eql(u8, error_code, "TASK_NOT_FOUND")) return ExitCode.NOT_FOUND;
+    if (std.mem.eql(u8, error_code, "SPRINT_NOT_FOUND")) return ExitCode.NOT_FOUND;
+    if (std.mem.eql(u8, error_code, "NO_ROADMAP")) return ExitCode.NO_ROADMAP;
+    if (std.mem.eql(u8, error_code, "DB_ERROR")) return ExitCode.FAILURE;
+    if (std.mem.eql(u8, error_code, "SYSTEM_ERROR")) return ExitCode.FAILURE;
+    if (std.mem.eql(u8, error_code, "UNKNOWN_SUBCOMMAND")) return ExitCode.MISUSE;
+    if (std.mem.eql(u8, error_code, "UNKNOWN_COMMAND")) return ExitCode.CMD_NOT_FOUND;
+    if (std.mem.eql(u8, error_code, "NO_SPRINT")) return ExitCode.NOT_FOUND;
+    return ExitCode.FAILURE;
+}
+
+fn printError(allocator: std.mem.Allocator, code: []const u8, message: []const u8) u8 {
     const err_json = json.errorResponse(allocator, code, message) catch "{\"success\":false,\"error\":{\"code\":\"SYSTEM_ERROR\",\"message\":\"Failed to generate error response\"}}";
     defer if (!std.mem.eql(u8, err_json, "{\"success\":false,\"error\":{\"code\":\"SYSTEM_ERROR\",\"message\":\"Failed to generate error response\"}}")) allocator.free(err_json);
     printStdout("{s}\n", .{err_json});
+    return getExitCodeForError(code);
 }
 
 /// Main entry point for CLI
@@ -69,9 +100,9 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (roadmap_override) |r| {
         const res = try roadmap.useRoadmap(allocator, r);
         defer allocator.free(res);
-        if (std.mem.indexOf(u8, res, "\"success\":false") != null) {
+        if (std.mem.indexOf(u8, res, "\"code\":") != null) {
             printStdout("{s}\n", .{res});
-            std.process.exit(1);
+            std.process.exit(ExitCode.FAILURE);
         }
     }
 
@@ -85,8 +116,8 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, cmd, "audit")) {
         try handleAuditCommand(allocator, subargs);
     } else {
-        printError(allocator, "UNKNOWN_COMMAND", try std.fmt.allocPrint(allocator, "Unknown command: {s}", .{cmd}));
-        std.process.exit(1);
+        const exit_code = printError(allocator, "UNKNOWN_COMMAND", try std.fmt.allocPrint(allocator, "Unknown command: {s}", .{cmd}));
+        std.process.exit(exit_code);
     }
 }
 
@@ -111,38 +142,54 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
         const result = try roadmap.listRoadmaps(allocator);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "create") or std.mem.eql(u8, subcmd, "new")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap create <name> [--force]");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap create <name> [--force]");
+            std.process.exit(exit_code);
         }
         const name = subargs[0];
         const force = hasFlag(subargs, "--force");
         const result = try roadmap.createRoadmap(allocator, name, force);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.EXISTS);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm") or std.mem.eql(u8, subcmd, "delete")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap remove <name>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap remove <name>");
+            std.process.exit(exit_code);
         }
         const name = subargs[0];
         const result = try roadmap.removeRoadmap(allocator, name);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "use")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap use <name>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap use <name>");
+            std.process.exit(exit_code);
         }
         const name = subargs[0];
         const result = try roadmap.useRoadmap(allocator, name);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else {
-        printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown roadmap subcommand: {s}", .{subcmd}));
-        std.process.exit(1);
+        const exit_code = printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown roadmap subcommand: {s}", .{subcmd}));
+        std.process.exit(exit_code);
     }
 }
 
@@ -185,15 +232,19 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const result = try task.listTasks(allocator, filters);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp task get <ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task get <ids>");
+            std.process.exit(exit_code);
         }
         if (subargs.len > 1) {
-            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task get'. Only 1 comma-separated ID list is allowed.");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Too many arguments for 'task get'. Only 1 comma-separated ID list is allowed.");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
             const err_msg = switch (err) {
@@ -202,14 +253,14 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
                 else => try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }),
             };
             defer allocator.free(err_msg);
-            printError(allocator, "INVALID_INPUT", err_msg);
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", err_msg);
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
         if (ids.len == 0) {
-            printError(allocator, "INVALID_INPUT", "No task IDs provided");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "No task IDs provided");
+            std.process.exit(exit_code);
         }
 
         var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -229,27 +280,38 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
         try handleTaskAdd(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "status") or std.mem.eql(u8, subcmd, "stat")) {
         if (subargs.len < 2) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp task status <ids> <status>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task status <ids> <status>");
+            std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
-            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task status'. Usage: rmp task status <ids> <status>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Too many arguments for 'task status'. Usage: rmp task status <ids> <status>");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
         const status = @import("models/task.zig").TaskStatus.fromString(subargs[1]) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid status: {s}", .{subargs[1]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid status: {s}", .{subargs[1]}));
+            std.process.exit(exit_code);
         };
 
         var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -269,30 +331,41 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "prio") or std.mem.eql(u8, subcmd, "priority")) {
         if (subargs.len < 2) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp task prio <ids> <priority>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task prio <ids> <priority>");
+            std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
-            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task prio'. Usage: rmp task prio <ids> <priority>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Too many arguments for 'task prio'. Usage: rmp task prio <ids> <priority>");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
         const priority = std.fmt.parseInt(i32, subargs[1], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority: {s}", .{subargs[1]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority: {s}", .{subargs[1]}));
+            std.process.exit(exit_code);
         };
 
         if (priority < 0 or priority > 9) {
-            printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
+            std.process.exit(exit_code);
         }
 
         var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -312,30 +385,41 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "sev") or std.mem.eql(u8, subcmd, "severity")) {
         if (subargs.len < 2) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp task sev <ids> <severity>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task sev <ids> <severity>");
+            std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
-            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task sev'. Usage: rmp task sev <ids> <severity>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Too many arguments for 'task sev'. Usage: rmp task sev <ids> <severity>");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
         const severity = std.fmt.parseInt(i32, subargs[1], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity: {s}", .{subargs[1]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity: {s}", .{subargs[1]}));
+            std.process.exit(exit_code);
         };
 
         if (severity < 0 or severity > 9) {
-            printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
+            std.process.exit(exit_code);
         }
 
         var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -355,17 +439,28 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "edit")) {
         try handleTaskEdit(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "delete") or std.mem.eql(u8, subcmd, "rm")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp task delete <ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task delete <ids>");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
@@ -386,11 +481,23 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else {
         printStdout("Unknown task subcommand: {s}\n", .{subcmd});
         printStdout("Available: list, get, add, status, prio, sev, edit, delete\n", .{});
-        std.process.exit(1);
+        const exit_code = printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown task subcommand: {s}", .{subcmd}));
+        std.process.exit(exit_code);
     }
 }
 
@@ -410,63 +517,63 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
             i += 1;
             if (i < args.len) {
                 priority = std.fmt.parseInt(i32, args[i], 10) catch {
-                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(exit_code);
                 };
                 if (priority < 0 or priority > 9) {
-                    printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
+                    std.process.exit(exit_code);
                 }
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--severity")) {
             i += 1;
             if (i < args.len) {
                 severity = std.fmt.parseInt(i32, args[i], 10) catch {
-                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(exit_code);
                 };
                 if (severity < 0 or severity > 9) {
-                    printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
+                    std.process.exit(exit_code);
                 }
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--description")) {
             i += 1;
             if (i < args.len) {
                 description = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for description flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for description flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-sp") or std.mem.eql(u8, arg, "--specialists")) {
             i += 1;
             if (i < args.len) {
                 specialists = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--action")) {
             i += 1;
             if (i < args.len) {
                 action = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for action flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for action flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
             i += 1;
             if (i < args.len) {
                 expected_result = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                std.process.exit(exit_code);
             }
         }
     }
@@ -475,7 +582,7 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const err_json = try json.errorResponse(allocator, "INVALID_INPUT", "Missing required fields. Usage: rmp task add -d <description> -a <action> -e <expected_result> [-p priority] [-s severity] [-sp specialists]");
         defer allocator.free(err_json);
         printStdout("{s}\n", .{err_json});
-        std.process.exit(1);
+        std.process.exit(ExitCode.MISUSE);
     }
 
     const input = task.TaskInput{
@@ -489,18 +596,22 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const result = try task.addTask(allocator, input);
     defer allocator.free(result);
+    if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+        printStdout("{s}\n", .{result});
+        std.process.exit(ExitCode.FAILURE);
+    }
     printStdout("{s}\n", .{result});
 }
 
 fn handleTaskEdit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        printError(allocator, "INVALID_INPUT", "Usage: rmp task edit <id> [options...]");
-        std.process.exit(1);
+        const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task edit <id> [options...]");
+        std.process.exit(exit_code);
     }
 
     const id = std.fmt.parseInt(i64, args[0], 10) catch {
-        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task ID: {s}", .{args[0]}));
-        std.process.exit(1);
+        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task ID: {s}", .{args[0]}));
+        std.process.exit(exit_code);
     };
 
     var updates = Task.TaskUpdate{
@@ -519,75 +630,79 @@ fn handleTaskEdit(allocator: std.mem.Allocator, args: []const []const u8) !void 
             i += 1;
             if (i < args.len) {
                 updates.priority = std.fmt.parseInt(i32, args[i], 10) catch {
-                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(exit_code);
                 };
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--severity")) {
             i += 1;
             if (i < args.len) {
                 updates.severity = std.fmt.parseInt(i32, args[i], 10) catch {
-                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(exit_code);
                 };
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--description")) {
             i += 1;
             if (i < args.len) {
                 updates.description = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for description flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for description flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-sp") or std.mem.eql(u8, arg, "--specialists")) {
             i += 1;
             if (i < args.len) {
                 updates.specialists = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--action")) {
             i += 1;
             if (i < args.len) {
                 updates.action = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for action flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for action flag");
+                std.process.exit(exit_code);
             }
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
             i += 1;
             if (i < args.len) {
                 updates.expected_result = args[i];
             } else {
-                printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
-                std.process.exit(1);
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                std.process.exit(exit_code);
             }
         }
     }
 
     if (updates.priority) |p| {
         if (p < 0 or p > 9) {
-            printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
+            std.process.exit(exit_code);
         }
     }
 
     if (updates.severity) |s| {
         if (s < 0 or s > 9) {
-            printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
+            std.process.exit(exit_code);
         }
     }
 
     const result = try task.editTask(allocator, id, updates);
     defer allocator.free(result);
+    if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+        printStdout("{s}\n", .{result});
+        std.process.exit(ExitCode.NOT_FOUND);
+    }
     printStdout("{s}\n", .{result});
 }
 
@@ -602,6 +717,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         // Default: list sprints
         const result = try sprint.listSprints(allocator, null);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
         return;
     }
@@ -613,116 +732,152 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         const status_filter = getSprintStatusFilter(subargs);
         const result = try sprint.listSprints(allocator, status_filter);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint get <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint get <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const result = try sprint.getSprint(allocator, id);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "tasks")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint tasks <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint tasks <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const status_filter = getStatusFilter(subargs);
         const result = try sprint.listSprintTasks(allocator, id, status_filter);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add <description>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add <description>");
+            std.process.exit(exit_code);
         }
         const description = try std.mem.join(allocator, " ", subargs);
         defer allocator.free(description);
         const result = try sprint.addSprint(allocator, description);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "open") or std.mem.eql(u8, subcmd, "start")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint open <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint open <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const result = try sprint.openSprint(allocator, id);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "close")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint close <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint close <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const result = try sprint.closeSprint(allocator, id);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "reopen")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint reopen <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint reopen <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const result = try sprint.reopenSprint(allocator, id);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "stats")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint stats <id>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint stats <id>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const result = try sprint.getSprintStats(allocator, id);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "update") or std.mem.eql(u8, subcmd, "upd")) {
         if (subargs.len < 2) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint update <id> <description>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint update <id> <description>");
+            std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const description = try std.mem.join(allocator, " ", subargs[1..]);
         defer allocator.free(description);
         const result = try sprint.updateSprint(allocator, id, description);
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "add-task") or std.mem.eql(u8, subcmd, "add-tasks") or std.mem.eql(u8, subcmd, "add")) {
         if (subargs.len < 2) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add-task <sprint_id> <task_ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add-task <sprint_id> <task_ids>");
+            std.process.exit(exit_code);
         }
         const sprint_id = std.fmt.parseInt(i64, subargs[0], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
+            std.process.exit(exit_code);
         };
         const task_ids = parseIds(allocator, subargs[1]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[1], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[1], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(task_ids);
 
@@ -743,11 +898,22 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "remove-task") or std.mem.eql(u8, subcmd, "remove-tasks") or std.mem.eql(u8, subcmd, "rm-tasks")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove-tasks <sprint_id> <task_ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove-tasks <sprint_id> <task_ids>");
+            std.process.exit(exit_code);
         }
 
         // Spec says: rmp sprint rm-tasks <sprint_id> <task_ids>
@@ -756,8 +922,8 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         const ids_arg = if (subargs.len >= 2) subargs[1] else subargs[0];
 
         const task_ids = parseIds(allocator, ids_arg) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ ids_arg, err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ ids_arg, err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(task_ids);
 
@@ -778,22 +944,33 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "move-tasks") or std.mem.eql(u8, subcmd, "mv-tasks")) {
         if (subargs.len < 3) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint move-tasks <from_sprint_id> <to_sprint_id> <task_ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint move-tasks <from_sprint_id> <to_sprint_id> <task_ids>");
+            std.process.exit(exit_code);
         }
 
         // Spec: mv-tasks <from-sprint> <to-sprint> <task-ids...>
         const new_sprint_id = std.fmt.parseInt(i64, subargs[1], 10) catch {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid to_sprint_id: {s}", .{subargs[1]}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid to_sprint_id: {s}", .{subargs[1]}));
+            std.process.exit(exit_code);
         };
 
         const task_ids = parseIds(allocator, subargs[2]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[2], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[2], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(task_ids);
 
@@ -814,15 +991,26 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm")) {
         if (subargs.len < 1) {
-            printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove <ids>");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove <ids>");
+            std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint IDs: {s} (error: {any})", .{ subargs[0], err }));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint IDs: {s} (error: {any})", .{ subargs[0], err }));
+            std.process.exit(exit_code);
         };
         defer allocator.free(ids);
 
@@ -843,10 +1031,21 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         const final_json = try buildBulkResponse(allocator, results_list.items);
         defer allocator.free(final_json);
+        // Check if any result is an error
+        var has_error = false;
+        for (results_list.items) |res| {
+            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
+                has_error = true;
+                break;
+            }
+        }
         printStdout("{s}\n", .{final_json});
+        if (has_error) {
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
     } else {
-        printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown sprint subcommand: {s}", .{subcmd}));
-        std.process.exit(1);
+        const exit_code = printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown sprint subcommand: {s}", .{subcmd}));
+        std.process.exit(exit_code);
     }
 }
 
@@ -859,8 +1058,8 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
     }
 
     if (args.len == 0) {
-        printError(allocator, "INVALID_INPUT", "Usage: rmp audit <subcommand> [options]\nSubcommands: list, history, stats");
-        std.process.exit(1);
+        const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp audit <subcommand> [options]\nSubcommands: list, history, stats");
+        std.process.exit(exit_code);
     }
 
     const subcmd = args[0];
@@ -886,8 +1085,8 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
                 i += 1;
                 if (i < subargs.len) {
                     options.entity_id = std.fmt.parseInt(i64, subargs[i], 10) catch {
-                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{subargs[i]}));
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{subargs[i]}));
+                        std.process.exit(exit_code);
                     };
                 }
             } else if (std.mem.eql(u8, arg, "--since")) {
@@ -895,8 +1094,8 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
                 if (i < subargs.len) {
                     const since_str = subargs[i];
                     if (!time.isValidIso8601(since_str)) {
-                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid since date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{since_str}));
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid since date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{since_str}));
+                        std.process.exit(exit_code);
                     }
                     options.since = since_str;
                 }
@@ -905,8 +1104,8 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
                 if (i < subargs.len) {
                     const until_str = subargs[i];
                     if (!time.isValidIso8601(until_str)) {
-                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid until date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{until_str}));
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid until date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{until_str}));
+                        std.process.exit(exit_code);
                     }
                     options.until = until_str;
                 }
@@ -914,34 +1113,38 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
                 i += 1;
                 if (i < subargs.len) {
                     options.limit = std.fmt.parseInt(i32, subargs[i], 10) catch {
-                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid limit: {s}", .{subargs[i]}));
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid limit: {s}", .{subargs[i]}));
+                        std.process.exit(exit_code);
                     };
                     if (options.limit < 1 or options.limit > 1000) {
-                        printError(allocator, "INVALID_INPUT", "Limit must be between 1 and 1000");
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", "Limit must be between 1 and 1000");
+                        std.process.exit(exit_code);
                     }
                 }
             } else if (std.mem.eql(u8, arg, "--offset")) {
                 i += 1;
                 if (i < subargs.len) {
                     options.offset = std.fmt.parseInt(i32, subargs[i], 10) catch {
-                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid offset: {s}", .{subargs[i]}));
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid offset: {s}", .{subargs[i]}));
+                        std.process.exit(exit_code);
                     };
                     if (options.offset < 0) {
-                        printError(allocator, "INVALID_INPUT", "Offset must be non-negative");
-                        std.process.exit(1);
+                        const exit_code = printError(allocator, "INVALID_INPUT", "Offset must be non-negative");
+                        std.process.exit(exit_code);
                     }
                 }
             }
         }
 
         const result = audit.listAuditEntries(allocator, options) catch |err| {
-            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to list audit entries: {any}", .{err}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to list audit entries: {any}", .{err}));
+            std.process.exit(exit_code);
         };
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "history") or std.mem.eql(u8, subcmd, "hist")) {
         // Parse flags for history command
@@ -976,27 +1179,31 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
             }
             if (last_arg) |id_str| {
                 entity_id = std.fmt.parseInt(i64, id_str, 10) catch {
-                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{id_str}));
-                    std.process.exit(1);
+                    const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{id_str}));
+                    std.process.exit(exit_code);
                 };
             }
         }
 
         if (entity_type == null) {
-            printError(allocator, "INVALID_INPUT", "Entity type is required. Use -e or --entity-type (TASK or SPRINT)");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Entity type is required. Use -e or --entity-type (TASK or SPRINT)");
+            std.process.exit(exit_code);
         }
 
         if (entity_id == null) {
-            printError(allocator, "INVALID_INPUT", "Entity ID is required");
-            std.process.exit(1);
+            const exit_code = printError(allocator, "INVALID_INPUT", "Entity ID is required");
+            std.process.exit(exit_code);
         }
 
         const result = audit.getEntityHistory(allocator, entity_type.?, entity_id.?) catch |err| {
-            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get entity history: {any}", .{err}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get entity history: {any}", .{err}));
+            std.process.exit(exit_code);
         };
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.NOT_FOUND);
+        }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "stats")) {
         // Parse flags for stats command
@@ -1019,14 +1226,18 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
         }
 
         const result = audit.getAuditStats(allocator, since_filter, until_filter) catch |err| {
-            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get audit stats: {any}", .{err}));
-            std.process.exit(1);
+            const exit_code = printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get audit stats: {any}", .{err}));
+            std.process.exit(exit_code);
         };
         defer allocator.free(result);
+        if (std.mem.indexOf(u8, result, "\"code\":") != null) {
+            printStdout("{s}\n", .{result});
+            std.process.exit(ExitCode.FAILURE);
+        }
         printStdout("{s}\n", .{result});
     } else {
-        printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown audit subcommand: {s}", .{subcmd}));
-        std.process.exit(1);
+        const exit_code = printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown audit subcommand: {s}", .{subcmd}));
+        std.process.exit(exit_code);
     }
 }
 

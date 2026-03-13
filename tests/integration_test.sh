@@ -36,18 +36,29 @@ assert_json() {
     fi
 }
 
-# Helper function to assert success: true
+# Helper function to assert success (no error code in response)
 assert_success() {
     local json="$1"
     local message="$2"
-    assert_json "$json" ".success" "true" "$message"
+    # Check if response contains error code
+    if echo "$json" | jq -e 'has("code")' > /dev/null 2>&1; then
+        echo -e "  [${RED}FAIL${NC}] $message (Got error: $(echo "$json" | jq -r '.code'))"
+        exit 1
+    else
+        echo -e "  [${GREEN}PASS${NC}] $message"
+    fi
+}
+
+# Helper function to assert no error (same as assert_success)
+assert_no_error() {
+    assert_success "$1" "$2"
 }
 
 # 1. Roadmap Management
 echo "1. Testing Roadmap Management..."
 OUT=$($EXE roadmap create $TEST_RM)
 assert_success "$OUT" "Create roadmap"
-assert_json "$OUT" ".data.name" "$TEST_RM" "Roadmap name matches"
+assert_json "$OUT" ".name" "$TEST_RM" "Roadmap name matches"
 
 OUT=$($EXE roadmap use $TEST_RM)
 assert_success "$OUT" "Use roadmap"
@@ -56,15 +67,15 @@ assert_success "$OUT" "Use roadmap"
 echo "2. Testing Task Management..."
 OUT=$($EXE task add -d "Task 1" -a "Action 1" -e "Result 1" -p 5 -s 3)
 assert_success "$OUT" "Add Task 1"
-T1_ID=$(echo "$OUT" | jq -r ".data.id")
+T1_ID=$(echo "$OUT" | jq -r ".id")
 
 OUT=$($EXE task add -d "Task 2" -a "Action 2" -e "Result 2" -p 8 -s 5)
 assert_success "$OUT" "Add Task 2"
-T2_ID=$(echo "$OUT" | jq -r ".data.id")
+T2_ID=$(echo "$OUT" | jq -r ".id")
 
 OUT=$($EXE task list)
 assert_success "$OUT" "List tasks"
-assert_json "$OUT" ".data.count" "2" "Task count is 2"
+assert_json "$OUT" ".count" "2" "Task count is 2"
 
 # 3. Status Transitions
 echo "3. Testing Status Transitions..."
@@ -86,8 +97,8 @@ assert_success "$OUT" "Status TESTING -> COMPLETED"
 
 # Check if completed_at is set
 OUT=$($EXE task get $T1_ID)
-assert_json "$OUT" ".data.status" "COMPLETED" "Status is COMPLETED"
-COMPLETED_AT=$(echo "$OUT" | jq -r ".data.completed_at")
+assert_json "$OUT" ".status" "COMPLETED" "Status is COMPLETED"
+COMPLETED_AT=$(echo "$OUT" | jq -r ".completed_at")
 if [ "$COMPLETED_AT" != "null" ]; then
     echo -e "  [${GREEN}PASS${NC}] completed_at is set"
 else
@@ -99,7 +110,7 @@ fi
 echo "4. Testing Sprint Management..."
 OUT=$($EXE sprint add "Sprint 1")
 assert_success "$OUT" "Create sprint"
-S1_ID=$(echo "$OUT" | jq -r ".data.id")
+S1_ID=$(echo "$OUT" | jq -r ".id")
 
 OUT=$($EXE sprint add-task $S1_ID $T2_ID)
 assert_success "$OUT" "Add task to sprint"
@@ -109,7 +120,7 @@ assert_success "$OUT" "Start sprint"
 
 OUT=$($EXE sprint stats $S1_ID)
 assert_success "$OUT" "Get sprint stats"
-assert_json "$OUT" ".data.total_tasks" "1" "Sprint total tasks"
+assert_json "$OUT" ".total_tasks" "1" "Sprint total tasks"
 
 # 5. Bulk Operations
 echo "5. Testing Bulk Operations..."
@@ -120,40 +131,40 @@ assert_success "$OUT" "Bulk delete"
 # 6. Testing Sprint Task Transitions and Advanced Sprint Commands
 echo "6. Testing Sprint Task Transitions..."
 OUT=$($EXE task add -d "Transition Task" -a "Action" -e "Result")
-TT_ID=$(echo "$OUT" | jq -r ".data.id")
+TT_ID=$(echo "$OUT" | jq -r ".id")
 
 # Status should be BACKLOG
 OUT=$($EXE task get $TT_ID)
-assert_json "$OUT" ".data.status" "BACKLOG" "Task starts in BACKLOG"
+assert_json "$OUT" ".status" "BACKLOG" "Task starts in BACKLOG"
 
 # Create new sprint
 OUT=$($EXE sprint add "Transition Sprint")
-S2_ID=$(echo "$OUT" | jq -r ".data.id")
+S2_ID=$(echo "$OUT" | jq -r ".id")
 
 # Add to sprint - should change to SPRINT
 OUT=$($EXE sprint add-task $S2_ID $TT_ID)
 assert_success "$OUT" "Add task to transition sprint"
 OUT=$($EXE task get $TT_ID)
-assert_json "$OUT" ".data.status" "SPRINT" "Task status changed to SPRINT"
+assert_json "$OUT" ".status" "SPRINT" "Task status changed to SPRINT"
 
 # Move to another sprint
 OUT=$($EXE sprint move-tasks $S2_ID $S1_ID $TT_ID)
 assert_success "$OUT" "Move task between sprints"
 OUT=$($EXE task get $TT_ID)
-assert_json "$OUT" ".data.status" "SPRINT" "Task status remains SPRINT after move"
+assert_json "$OUT" ".status" "SPRINT" "Task status remains SPRINT after move"
 
 # Remove from sprint - should return to BACKLOG
 OUT=$($EXE sprint rm-tasks $S1_ID $TT_ID)
 assert_success "$OUT" "Remove task from sprint"
 OUT=$($EXE task get $TT_ID)
-assert_json "$OUT" ".data.status" "BACKLOG" "Task status returned to BACKLOG"
+assert_json "$OUT" ".status" "BACKLOG" "Task status returned to BACKLOG"
 
 # 7. Audit Commands
 echo "7. Testing Audit Commands..."
 OUT=$($EXE audit list)
 assert_success "$OUT" "List audit entries"
 # Verify we have audit entries (at least 3: roadmap create + task create operations)
-COUNT=$(echo "$OUT" | jq -r '.data.count')
+COUNT=$(echo "$OUT" | jq -r '.count')
 if [ "$COUNT" -ge 3 ]; then
     echo -e "  [${GREEN}PASS${NC}] Audit entries count ($COUNT >= 3)"
 else
@@ -163,7 +174,7 @@ fi
 
 OUT=$($EXE audit list --operation TASK_CREATE)
 assert_success "$OUT" "List audit entries filtered by operation"
-COUNT=$(echo "$OUT" | jq -r '.data.count')
+COUNT=$(echo "$OUT" | jq -r '.count')
 if [ "$COUNT" -ge 1 ]; then
     echo -e "  [${GREEN}PASS${NC}] Task create audit entries exist ($COUNT)"
 else
@@ -173,7 +184,7 @@ fi
 
 OUT=$($EXE audit list --entity-type TASK)
 assert_success "$OUT" "List audit entries filtered by entity type"
-COUNT=$(echo "$OUT" | jq -r '.data.count')
+COUNT=$(echo "$OUT" | jq -r '.count')
 if [ "$COUNT" -ge 1 ]; then
     echo -e "  [${GREEN}PASS${NC}] Task audit entries exist ($COUNT)"
 else
@@ -183,7 +194,7 @@ fi
 
 OUT=$($EXE audit history -e TASK $T1_ID)
 assert_success "$OUT" "Get entity history for task"
-COUNT=$(echo "$OUT" | jq -r '.data.count')
+COUNT=$(echo "$OUT" | jq -r '.count')
 if [ "$COUNT" -ge 4 ]; then
     echo -e "  [${GREEN}PASS${NC}] Task history entries exist ($COUNT >= 4)"
 else
@@ -193,7 +204,7 @@ fi
 
 OUT=$($EXE audit stats)
 assert_success "$OUT" "Get audit stats"
-TOTAL=$(echo "$OUT" | jq -r '.data.total_entries')
+TOTAL=$(echo "$OUT" | jq -r '.total_entries')
 if [ "$TOTAL" -ge 3 ]; then
     echo -e "  [${GREEN}PASS${NC}] Audit stats has entries ($TOTAL >= 3)"
 else

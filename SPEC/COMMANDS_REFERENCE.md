@@ -12,6 +12,23 @@ rmp --version
 rmp -v
 ```
 
+## Exit Codes
+
+LRoadmap follows Unix exit code conventions for shell scripting:
+
+| Code | Meaning | Example |
+|------|---------|---------|
+| `0` | Success | Command completed |
+| `1` | General error | Database failure |
+| `2` | Invalid usage | Wrong arguments |
+| `3` | No roadmap selected | Use `rmp roadmap use` first |
+| `4` | Not found | Task/roadmap doesn't exist |
+| `5` | Already exists | Duplicate name |
+| `6` | Invalid data | Bad date/range |
+| `127` | Unknown command | Typo in subcommand |
+
+See `ARCHITECTURE.md` for complete exit code documentation.
+
 ---
 
 ## Roadmap Management
@@ -327,3 +344,67 @@ rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23
 | `mv-tasks` | move tasks | sprint mv-tasks |
 | `upd` | update | sprint upd |
 | `use` | select | road use |
+
+---
+
+## Exit Codes
+
+LRoadmap follows standard Unix exit codes for shell scripting:
+
+| Code | Meaning | Example |
+|------|---------|---------|
+| `0` | Success | Command completed successfully |
+| `1` | General error | Database failure, unexpected error |
+| `2` | Misuse | Invalid arguments, syntax error |
+| `3` | No roadmap | No roadmap selected for command |
+| `4` | Not found | Roadmap/task/sprint not found |
+| `5` | Already exists | Duplicate name |
+| `6` | Invalid data | Validation failed (dates, ranges) |
+| `130` | Interrupted | Ctrl+C pressed |
+
+### Shell Script Example
+
+```bash
+# Check exit code
+rmp roadmap use myproject
+if [ $? -eq 0 ]; then
+    echo "Success"
+elif [ $? -eq 4 ]; then
+    echo "Roadmap not found"
+fi
+
+# Strict mode
+set -e
+rmp task add -d "Task"   # Exits 3 if no roadmap selected
+```
+
+---
+
+## Exit Codes
+
+LRoadmap follows standard Unix exit code conventions for shell scripting compatibility.
+
+| Code | Meaning | Common Scenarios |
+|------|---------|------------------|
+| `0` | Success | Command completed successfully |
+| `1` | General error | Database errors, system failures |
+| `2` | Misuse | Invalid arguments, syntax errors |
+| `3` | No roadmap | Command needs roadmap but none selected |
+| `4` | Not found | Roadmap/task/sprint doesn't exist |
+| `5` | Already exists | Duplicate name when creating |
+| `6` | Invalid data | Validation failures (dates, ranges) |
+| `126` | Not executable | Permission denied |
+| `127` | Command not found | Unknown command/subcommand |
+| `130` | Interrupted | Ctrl+C pressed |
+
+### Example: Script with Exit Code Handling
+
+```bash
+rmp roadmap create myproject
+case $? in
+    0) echo "Created successfully" ;;
+    5) echo "Already exists" ;;
+    6) echo "Invalid name" ;;
+    *) echo "Error code: $?" ;;
+esac
+```

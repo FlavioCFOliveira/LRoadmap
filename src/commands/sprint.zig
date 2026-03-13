@@ -343,7 +343,12 @@ pub fn getSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    var sprint_obj = try queries.getSprintById(allocator, conn, sprint_id);
+    var sprint_obj = queries.getSprintById(allocator, conn, sprint_id) catch |err| {
+        if (err == error.SprintNotFound) {
+            return json.errorResponse(allocator, "SPRINT_NOT_FOUND", try std.fmt.allocPrint(allocator, "Sprint {d} not found", .{sprint_id}));
+        }
+        return err;
+    };
     defer sprint_obj.deinit(allocator);
 
     const sprint_json = try sprint_obj.toJson(allocator);

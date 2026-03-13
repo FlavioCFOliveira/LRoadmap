@@ -145,6 +145,66 @@ Each module implements:
 }
 ```
 
+## Exit Codes
+
+LRoadmap follows standard Unix/Linux exit code conventions. While all output is JSON, the exit code indicates success or failure type for shell scripting and CI/CD integration.
+
+### Exit Code Standards
+
+| Exit Code | Name | Description | When Used |
+|-----------|------|-------------|-----------|
+| `0` | `EXIT_SUCCESS` | Command completed successfully | All successful operations |
+| `1` | `EXIT_FAILURE` | General error | Unexpected errors, database failures |
+| `2` | `EXIT_MISUSE` | Misuse of command | Invalid arguments, syntax errors |
+| `3` | `EXIT_NO_ROADMAP` | No roadmap selected | Commands requiring roadmap when none selected |
+| `4` | `EXIT_NOT_FOUND` | Resource not found | Roadmap/task/sprint not found |
+| `5` | `EXIT_EXISTS` | Resource already exists | Duplicate roadmap/task names |
+| `6` | `EXIT_INVALID_INPUT` | Invalid input data | Validation failures (dates, ranges) |
+| `126` | `EXIT_NOT_EXECUTABLE` | Command not executable | Permission issues |
+| `127` | `EXIT_NOT_FOUND` | Command not found | Unknown command/subcommand |
+| `130` | `EXIT_SIGINT` | Interrupted by Ctrl+C | SIGINT received |
+
+### Error Code Mapping
+
+Internal error codes map to exit codes as follows:
+
+| Error Code | Exit Code | Meaning |
+|------------|-----------|---------|
+| `INVALID_INPUT` | 2 | Bad command syntax or missing arguments |
+| `INVALID_DATE` | 6 | Date format or range validation failed |
+| `INVALID_DATE_RANGE` | 6 | Date range validation failed |
+| `INVALID_PRIORITY` | 6 | Priority out of range (0-9) |
+| `ROADMAP_NOT_FOUND` | 4 | Specified roadmap does not exist |
+| `ROADMAP_EXISTS` | 5 | Roadmap name already in use |
+| `TASK_NOT_FOUND` | 4 | Task ID does not exist |
+| `SPRINT_NOT_FOUND` | 4 | Sprint ID does not exist |
+| `NO_ROADMAP` | 3 | No roadmap selected and none specified |
+| `DB_ERROR` | 1 | Database operation failed |
+| `SYSTEM_ERROR` | 1 | Internal system error |
+| `UNKNOWN_SUBCOMMAND` | 2 | Invalid subcommand specified |
+
+### Usage in Shell Scripts
+
+```bash
+# Check if command succeeded
+if rmp task list -r myproject > /dev/null 2>&1; then
+    echo "Tasks listed successfully"
+fi
+
+# Handle specific errors
+rmp roadmap create newproject
+case $? in
+    0) echo "Created successfully" ;;
+    5) echo "Roadmap already exists" ;;
+    *) echo "Failed with error code $?" ;;
+esac
+
+# Exit on any error (strict mode)
+set -e
+rmp roadmap use myproject    # Exits 4 if not found
+rmp task add -d "New task"   # Exits 3 if no roadmap
+```
+
 ## Performance Considerations
 
 1. **Lazy loading**: SQLite connections only opened when needed
