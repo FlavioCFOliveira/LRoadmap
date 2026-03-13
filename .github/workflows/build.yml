@@ -161,21 +161,125 @@ jobs:
           name: rmp-aarch64-windows
           path: zig-out/aarch64-windows/bin/rmp.exe
 
-  release:
+  # Continuous Release on main branch (overwrites previous dev release)
+  dev-release:
     needs: [build-linux-x86_64, build-linux-aarch64, build-macos-x86_64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           pattern: rmp-*
+          merge-multiple: false
 
-      - name: Create Release
+      - name: Organize artifacts
+        run: |
+          mkdir -p release
+          cp artifacts/rmp-x86_64-linux/rmp release/rmp-x86_64-linux
+          cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
+          cp artifacts/rmp-x86_64-macos/rmp release/rmp-x86_64-macos
+          cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
+          cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
+          cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Update Dev Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*
+          name: Development Build (latest)
+          tag_name: dev
+          draft: false
+          prerelease: true
+          files: release/*
+          generate_release_notes: false
+          body: |
+            ## LRoadmap Development Build
+
+            This is an automated build from the latest commit on `main`.
+
+            ### Binaries
+            - `rmp-x86_64-linux` - Linux x86_64
+            - `rmp-aarch64-linux` - Linux ARM64
+            - `rmp-x86_64-macos` - macOS x86_64 (Intel)
+            - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
+            - `rmp-x86_64-windows.exe` - Windows x86_64
+            - `rmp-aarch64-windows.exe` - Windows ARM64
+
+            ### Installation
+            Download the binary for your platform and add it to your PATH.
+
+            ### Verification
+            Check the `checksums.txt` file for SHA256 hashes.
+
+            ### Commit
+            ${{ github.sha }}
+
+  # Release on tags (v*)
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-x86_64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: rmp-*
+          merge-multiple: false
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p release
+          cp artifacts/rmp-x86_64-linux/rmp release/rmp-x86_64-linux
+          cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
+          cp artifacts/rmp-x86_64-macos/rmp release/rmp-x86_64-macos
+          cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
+          cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
+          cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: release/*
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## LRoadmap ${{ github.ref_name }}
+
+            ### Binaries
+            - `rmp-x86_64-linux` - Linux x86_64
+            - `rmp-aarch64-linux` - Linux ARM64
+            - `rmp-x86_64-macos` - macOS x86_64 (Intel)
+            - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
+            - `rmp-x86_64-windows.exe` - Windows x86_64
+            - `rmp-aarch64-windows.exe` - Windows ARM64
+
+            ### Installation
+            Download the binary for your platform and add it to your PATH.
+
+            ### Verification
+            Check the `checksums.txt` file for SHA256 hashes.
