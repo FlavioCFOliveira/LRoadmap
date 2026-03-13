@@ -32,7 +32,17 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    try cli.run(allocator, args);
+    cli.run(allocator, args) catch |err| {
+        const err_name = @errorName(err);
+        const err_msg = "An unexpected error occurred during execution";
+
+        const err_json = json.errorResponse(allocator, err_name, err_msg) catch "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}";
+        defer if (!std.mem.eql(u8, err_json, "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}")) allocator.free(err_json);
+
+        const stdout = std.fs.File.stdout().deprecatedWriter();
+        stdout.print("{s}\n", .{err_json}) catch {};
+        std.process.exit(1);
+    };
 }
 
 // ============== TESTS ==============

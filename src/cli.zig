@@ -66,7 +66,11 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // If we have an override, set it as current for this session
     if (roadmap_override) |r| {
         const res = try roadmap.useRoadmap(allocator, r);
-        allocator.free(res);
+        defer allocator.free(res);
+        if (std.mem.indexOf(u8, res, "\"success\":false") != null) {
+            printStdout("{s}\n", .{res});
+            std.process.exit(1);
+        }
     }
 
     // Route to appropriate command handler
@@ -156,6 +160,11 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     const subcmd = args[0];
     const subargs = args[1..];
 
+    if (subcmd.len == 0) {
+        printUsage(allocator);
+        return;
+    }
+
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
         const status_filter = getStatusFilter(subargs);
         const result = try task.listTasks(allocator, status_filter);
@@ -166,11 +175,26 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
             printError(allocator, "INVALID_INPUT", "Usage: rmp task get <ids>");
             std.process.exit(1);
         }
+        if (subargs.len > 1) {
+            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task get'. Only 1 comma-separated ID list is allowed.");
+            std.process.exit(1);
+        }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
-            printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }));
+            const err_msg = switch (err) {
+                error.InvalidCharacter => try std.fmt.allocPrint(allocator, "Invalid character in task IDs: {s}", .{subargs[0]}),
+                error.Overflow => try std.fmt.allocPrint(allocator, "Task ID too large: {s}", .{subargs[0]}),
+                else => try std.fmt.allocPrint(allocator, "Invalid task IDs: {s} (error: {any})", .{ subargs[0], err }),
+            };
+            defer allocator.free(err_msg);
+            printError(allocator, "INVALID_INPUT", err_msg);
             std.process.exit(1);
         };
         defer allocator.free(ids);
+
+        if (ids.len == 0) {
+            printError(allocator, "INVALID_INPUT", "No task IDs provided");
+            std.process.exit(1);
+        }
 
         var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
         defer {
@@ -195,6 +219,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     } else if (std.mem.eql(u8, subcmd, "status") or std.mem.eql(u8, subcmd, "stat")) {
         if (subargs.len < 2) {
             printError(allocator, "INVALID_INPUT", "Usage: rmp task status <ids> <status>");
+            std.process.exit(1);
+        }
+        if (subargs.len > 2) {
+            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task status'. Usage: rmp task status <ids> <status>");
             std.process.exit(1);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
@@ -229,6 +257,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     } else if (std.mem.eql(u8, subcmd, "prio") or std.mem.eql(u8, subcmd, "priority")) {
         if (subargs.len < 2) {
             printError(allocator, "INVALID_INPUT", "Usage: rmp task prio <ids> <priority>");
+            std.process.exit(1);
+        }
+        if (subargs.len > 2) {
+            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task prio'. Usage: rmp task prio <ids> <priority>");
             std.process.exit(1);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
@@ -268,6 +300,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     } else if (std.mem.eql(u8, subcmd, "sev") or std.mem.eql(u8, subcmd, "severity")) {
         if (subargs.len < 2) {
             printError(allocator, "INVALID_INPUT", "Usage: rmp task sev <ids> <severity>");
+            std.process.exit(1);
+        }
+        if (subargs.len > 2) {
+            printError(allocator, "INVALID_INPUT", "Too many arguments for 'task sev'. Usage: rmp task sev <ids> <severity>");
             std.process.exit(1);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
@@ -357,33 +393,65 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
         if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--priority")) {
             i += 1;
             if (i < args.len) {
-                priority = std.fmt.parseInt(i32, args[i], 10) catch 0;
+                priority = std.fmt.parseInt(i32, args[i], 10) catch {
+                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(1);
+                };
                 if (priority < 0 or priority > 9) {
                     printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
                     std.process.exit(1);
                 }
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
+                std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--severity")) {
             i += 1;
             if (i < args.len) {
-                severity = std.fmt.parseInt(i32, args[i], 10) catch 0;
+                severity = std.fmt.parseInt(i32, args[i], 10) catch {
+                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(1);
+                };
                 if (severity < 0 or severity > 9) {
                     printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
                     std.process.exit(1);
                 }
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
+                std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--description")) {
             i += 1;
-            if (i < args.len) description = args[i];
+            if (i < args.len) {
+                description = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for description flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-sp") or std.mem.eql(u8, arg, "--specialists")) {
             i += 1;
-            if (i < args.len) specialists = args[i];
+            if (i < args.len) {
+                specialists = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--action")) {
             i += 1;
-            if (i < args.len) action = args[i];
+            if (i < args.len) {
+                action = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for action flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
             i += 1;
-            if (i < args.len) expected_result = args[i];
+            if (i < args.len) {
+                expected_result = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                std.process.exit(1);
+            }
         }
     }
 
@@ -434,25 +502,57 @@ fn handleTaskEdit(allocator: std.mem.Allocator, args: []const []const u8) !void 
         if (std.mem.eql(u8, arg, "-p") or std.mem.eql(u8, arg, "--priority")) {
             i += 1;
             if (i < args.len) {
-                updates.priority = std.fmt.parseInt(i32, args[i], 10) catch null;
+                updates.priority = std.fmt.parseInt(i32, args[i], 10) catch {
+                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid priority value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(1);
+                };
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
+                std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--severity")) {
             i += 1;
             if (i < args.len) {
-                updates.severity = std.fmt.parseInt(i32, args[i], 10) catch null;
+                updates.severity = std.fmt.parseInt(i32, args[i], 10) catch {
+                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid severity value: {s}. Must be 0-9.", .{args[i]}));
+                    std.process.exit(1);
+                };
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for severity flag");
+                std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--description")) {
             i += 1;
-            if (i < args.len) updates.description = args[i];
+            if (i < args.len) {
+                updates.description = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for description flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-sp") or std.mem.eql(u8, arg, "--specialists")) {
             i += 1;
-            if (i < args.len) updates.specialists = args[i];
+            if (i < args.len) {
+                updates.specialists = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for specialists flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--action")) {
             i += 1;
-            if (i < args.len) updates.action = args[i];
+            if (i < args.len) {
+                updates.action = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for action flag");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
             i += 1;
-            if (i < args.len) updates.expected_result = args[i];
+            if (i < args.len) {
+                updates.expected_result = args[i];
+            } else {
+                printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                std.process.exit(1);
+            }
         }
     }
 
@@ -789,6 +889,78 @@ fn getSprintStatusFilter(args: []const []const u8) ?@import("models/sprint.zig")
         }
     }
     return null;
+}
+
+// ============== TESTS ==============
+
+test "parseIds validates correctly" {
+    const allocator = std.testing.allocator;
+
+    // Valid inputs
+    {
+        const ids = try parseIds(allocator, "1,2,3");
+        defer allocator.free(ids);
+        try std.testing.expectEqual(@as(usize, 3), ids.len);
+        try std.testing.expectEqual(@as(i64, 1), ids[0]);
+        try std.testing.expectEqual(@as(i64, 2), ids[1]);
+        try std.testing.expectEqual(@as(i64, 3), ids[2]);
+    }
+
+    {
+        const ids = try parseIds(allocator, " 10 , 20 ");
+        defer allocator.free(ids);
+        try std.testing.expectEqual(@as(usize, 2), ids.len);
+        try std.testing.expectEqual(@as(i64, 10), ids[0]);
+        try std.testing.expectEqual(@as(i64, 20), ids[1]);
+    }
+
+    {
+        const ids = try parseIds(allocator, "5");
+        defer allocator.free(ids);
+        try std.testing.expectEqual(@as(usize, 1), ids.len);
+        try std.testing.expectEqual(@as(i64, 5), ids[0]);
+    }
+
+    // Empty parts
+    {
+        const ids = try parseIds(allocator, "1,,2");
+        defer allocator.free(ids);
+        try std.testing.expectEqual(@as(usize, 2), ids.len);
+        try std.testing.expectEqual(@as(i64, 1), ids[0]);
+        try std.testing.expectEqual(@as(i64, 2), ids[1]);
+    }
+
+    // Invalid inputs
+    try std.testing.expectError(error.InvalidCharacter, parseIds(allocator, "1,a,3"));
+    try std.testing.expectError(error.InvalidCharacter, parseIds(allocator, "abc"));
+}
+
+test "getStatusFilter extracts status" {
+    const TaskStatus = @import("models/task.zig").TaskStatus;
+
+    {
+        const args = [_][]const u8{ "ls", "--status", "DOING" };
+        const status = getStatusFilter(&args);
+        try std.testing.expectEqual(TaskStatus.DOING, status.?);
+    }
+
+    {
+        const args = [_][]const u8{ "ls", "-s", "COMPLETED" };
+        const status = getStatusFilter(&args);
+        try std.testing.expectEqual(TaskStatus.COMPLETED, status.?);
+    }
+
+    {
+        const args = [_][]const u8{ "ls" };
+        const status = getStatusFilter(&args);
+        try std.testing.expect(status == null);
+    }
+
+    {
+        const args = [_][]const u8{ "ls", "-s", "INVALID" };
+        const status = getStatusFilter(&args);
+        try std.testing.expect(status == null);
+    }
 }
 
 fn printCommandHelp(allocator: std.mem.Allocator, command: []const u8) void {

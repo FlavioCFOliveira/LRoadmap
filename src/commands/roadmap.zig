@@ -4,6 +4,7 @@ const json = @import("../utils/json.zig");
 const time = @import("../utils/time.zig");
 const connection = @import("../db/connection.zig");
 const schema = @import("../db/schema.zig");
+const queries = @import("../db/queries.zig");
 
 /// Lists all roadmaps in the ~/.roadmaps directory
 pub fn listRoadmaps(allocator: std.mem.Allocator) ![]const u8 {
@@ -126,6 +127,12 @@ pub fn createRoadmap(allocator: std.mem.Allocator, name: []const u8, force: bool
         return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to get current time");
     };
     defer allocator.free(now);
+
+    // Log operation to audit table
+    queries.logOperation(conn, "ROADMAP_CREATE", "roadmap", 0, now) catch {};
+
+    // Log operation
+    queries.logOperation(conn, "ROADMAP_CREATE", "roadmap", 0, now) catch {};
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"name\":\"{s}\",\"path\":\"~/.roadmaps/{s}.db\",\"created_at\":\"{s}\"}}", .{ name, name, now });
