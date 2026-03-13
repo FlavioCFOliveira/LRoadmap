@@ -94,7 +94,7 @@ jobs:
         run: |
           # Download SQLite amalgamation source
           $sqliteVersion = "3510300"
-          $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
+          $url = "https://sqlite.org/2026/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
           Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
           Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
@@ -125,7 +125,7 @@ jobs:
         run: |
           # Download SQLite amalgamation source
           $sqliteVersion = "3510300"
-          $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
+          $url = "https://sqlite.org/2026/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
           Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
           Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
