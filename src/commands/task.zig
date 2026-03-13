@@ -48,7 +48,7 @@ pub fn addTask(allocator: std.mem.Allocator, input: TaskInput) ![]const u8 {
     };
 
     const task_id = try queries.insertTask(conn, task);
-    try queries.logOperation(conn, "TASK_CREATE", "task", task_id, now);
+    try queries.logOperation(conn, "TASK_CREATE", "TASK", task_id, now);
 
     const created_task = try queries.getTaskById(allocator, conn, task_id);
     defer {
@@ -209,21 +209,39 @@ pub fn changeTaskStatus(allocator: std.mem.Allocator, ids: []const i64, new_stat
         return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
+    // Begin transaction for atomicity
+    try conn.beginTransaction();
+
     // Update status for all tasks
-    const updated_count = try queries.updateTaskStatusBulk(allocator, conn, ids, new_status);
+    const updated_count = queries.updateTaskStatusBulk(allocator, conn, ids, new_status) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to update task status");
+    };
 
     // Update completed_at based on status
     if (new_status == .COMPLETED) {
-        _ = try queries.updateTaskCompletedAtBulk(allocator, conn, ids, now);
+        _ = queries.updateTaskCompletedAtBulk(allocator, conn, ids, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to update completed_at");
+        };
     } else {
         // If moving away from COMPLETED, clear completed_at
-        _ = try queries.updateTaskCompletedAtBulk(allocator, conn, ids, null);
+        _ = queries.updateTaskCompletedAtBulk(allocator, conn, ids, null) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to clear completed_at");
+        };
     }
 
     // Log operation for each task
     for (ids) |id| {
-        try queries.logOperation(conn, "TASK_STATUS_CHANGE", "task", id, now);
+        queries.logOperation(conn, "TASK_STATUS_CHANGE", "TASK", id, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+        };
     }
+
+    // Commit transaction
+    try conn.commit();
 
     // Build response
     var ids_json: std.ArrayListUnmanaged(u8) = .empty;
@@ -292,13 +310,25 @@ pub fn setPriority(allocator: std.mem.Allocator, ids: []const i64, priority: i32
         return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
+    // Begin transaction for atomicity
+    try conn.beginTransaction();
+
     // Update priority for all tasks
-    const updated_count = try queries.updateTaskPriorityBulk(allocator, conn, ids, priority);
+    const updated_count = queries.updateTaskPriorityBulk(allocator, conn, ids, priority) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to update task priority");
+    };
 
     // Log operation for each task
     for (ids) |id| {
-        try queries.logOperation(conn, "TASK_PRIORITY_CHANGE", "task", id, now);
+        queries.logOperation(conn, "TASK_PRIORITY_CHANGE", "TASK", id, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+        };
     }
+
+    // Commit transaction
+    try conn.commit();
 
     // Build response
     var ids_json: std.ArrayListUnmanaged(u8) = .empty;
@@ -367,13 +397,25 @@ pub fn setSeverity(allocator: std.mem.Allocator, ids: []const i64, severity: i32
         return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
+    // Begin transaction for atomicity
+    try conn.beginTransaction();
+
     // Update severity for all tasks
-    const updated_count = try queries.updateTaskSeverityBulk(allocator, conn, ids, severity);
+    const updated_count = queries.updateTaskSeverityBulk(allocator, conn, ids, severity) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to update task severity");
+    };
 
     // Log operation for each task
     for (ids) |id| {
-        try queries.logOperation(conn, "TASK_SEVERITY_CHANGE", "task", id, now);
+        queries.logOperation(conn, "TASK_SEVERITY_CHANGE", "TASK", id, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+        };
     }
+
+    // Commit transaction
+    try conn.commit();
 
     // Build response
     var ids_json: std.ArrayListUnmanaged(u8) = .empty;
@@ -416,7 +458,7 @@ pub fn editTask(allocator: std.mem.Allocator, task_id: i64, updates: Task.TaskUp
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "TASK_UPDATE", "task", task_id, now);
+    try queries.logOperation(conn, "TASK_UPDATE", "TASK", task_id, now);
 
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"message\":\"Task updated successfully\",\"updated_at\":\"{s}\"}}", .{ task_id, now });
     defer allocator.free(response);
@@ -472,13 +514,25 @@ pub fn deleteTask(allocator: std.mem.Allocator, ids: []const i64) ![]const u8 {
         return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
+    // Begin transaction for atomicity
+    try conn.beginTransaction();
+
     // Log operation for each task before deletion
     for (ids) |id| {
-        try queries.logOperation(conn, "TASK_DELETE", "task", id, now);
+        queries.logOperation(conn, "TASK_DELETE", "TASK", id, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+        };
     }
 
     // Delete all tasks
-    const deleted_count = try queries.deleteTaskBulk(allocator, conn, ids);
+    const deleted_count = queries.deleteTaskBulk(allocator, conn, ids) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to delete tasks");
+    };
+
+    // Commit transaction
+    try conn.commit();
 
     // Build response
     var ids_json: std.ArrayListUnmanaged(u8) = .empty;

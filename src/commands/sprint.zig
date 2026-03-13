@@ -45,7 +45,7 @@ pub fn addSprint(allocator: std.mem.Allocator, description: []const u8) ![]const
     };
 
     // Log operation
-    queries.logOperation(conn, "SPRINT_CREATE", "sprint", sprint_id, now) catch {};
+    try queries.logOperation(conn, "SPRINT_CREATE", "SPRINT", sprint_id, now);
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"description\":\"{s}\",\"status\":\"PENDING\",\"created_at\":\"{s}\"}}", .{
@@ -109,10 +109,10 @@ pub fn openSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     queries.updateSprintStatus(conn, sprint_id, .OPEN) catch {
         return json.errorResponse(allocator, "DB_ERROR", "Failed to update sprint status");
     };
-    queries.updateSprintStartedAt(conn, sprint_id, now) catch {};
+    try queries.updateSprintStartedAt(conn, sprint_id, now);
 
     // Log operation
-    queries.logOperation(conn, "SPRINT_START", "sprint", sprint_id, now) catch {};
+    try queries.logOperation(conn, "SPRINT_START", "SPRINT", sprint_id, now);
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"PENDING\",\"new_status\":\"OPEN\",\"started_at\":\"{s}\"}}", .{
@@ -178,7 +178,7 @@ pub fn closeSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     };
 
     // Log operation
-    queries.logOperation(conn, "SPRINT_CLOSE", "sprint", sprint_id, now) catch {};
+    try queries.logOperation(conn, "SPRINT_CLOSE", "SPRINT", sprint_id, now);
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"OPEN\",\"new_status\":\"CLOSED\",\"closed_at\":\"{s}\"}}", .{
@@ -287,7 +287,7 @@ pub fn addTaskToSprint(allocator: std.mem.Allocator, sprint_id: i64, task_id: i6
     };
 
     // Log operation
-    queries.logOperation(conn, "SPRINT_ADD_TASK", "sprint", sprint_id, now) catch {
+    queries.logOperation(conn, "SPRINT_ADD_TASK", "SPRINT", sprint_id, now) catch {
         conn.rollback() catch {};
         return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
     };
@@ -349,7 +349,7 @@ pub fn removeTaskFromSprint(allocator: std.mem.Allocator, task_id: i64) ![]const
 
     // Log operation
     if (maybe_sprint_id) |sprint_id| {
-        queries.logOperation(conn, "SPRINT_REMOVE_TASK", "sprint", sprint_id, now) catch {
+        queries.logOperation(conn, "SPRINT_REMOVE_TASK", "SPRINT", sprint_id, now) catch {
             conn.rollback() catch {};
             return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
         };
@@ -454,7 +454,7 @@ pub fn updateSprint(allocator: std.mem.Allocator, sprint_id: i64, description: [
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "SPRINT_UPDATE", "sprint", sprint_id, now);
+    try queries.logOperation(conn, "SPRINT_UPDATE", "SPRINT", sprint_id, now);
 
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"description\":\"{s}\",\"updated_at\":\"{s}\"}}", .{ sprint_id, description, now });
     defer allocator.free(response);
@@ -491,7 +491,7 @@ pub fn reopenSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "SPRINT_REOPEN", "sprint", sprint_id, now);
+    try queries.logOperation(conn, "SPRINT_REOPEN", "SPRINT", sprint_id, now);
 
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"CLOSED\",\"new_status\":\"OPEN\",\"reopened_at\":\"{s}\"}}", .{ sprint_id, now });
     defer allocator.free(response);
@@ -567,7 +567,7 @@ pub fn deleteSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "SPRINT_DELETE", "sprint", sprint_id, now);
+    try queries.logOperation(conn, "SPRINT_DELETE", "SPRINT", sprint_id, now);
     try queries.deleteSprint(conn, sprint_id);
 
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"deleted_at\":\"{s}\"}}", .{ sprint_id, now });
@@ -602,7 +602,7 @@ pub fn moveTaskBetweenSprints(allocator: std.mem.Allocator, task_id: i64, new_sp
         return json.errorResponse(allocator, "DB_ERROR", "Failed to move task between sprints");
     };
 
-    queries.logOperation(conn, "SPRINT_MOVE_TASK", "sprint", new_sprint_id, now) catch {
+    queries.logOperation(conn, "SPRINT_MOVE_TASK", "SPRINT", new_sprint_id, now) catch {
         conn.rollback() catch {};
         return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
     };

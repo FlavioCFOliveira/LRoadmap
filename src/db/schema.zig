@@ -6,9 +6,6 @@ pub const SCHEMA_VERSION = "1.0.0";
 
 /// Creates all database tables
 pub fn createSchema(conn: Connection) !void {
-    // Enable foreign keys
-    try conn.exec("PRAGMA foreign_keys = ON");
-
     // Create tables in order
     try conn.exec(CREATE_TASKS_TABLE);
     try conn.exec(CREATE_SPRINTS_TABLE);
@@ -16,9 +13,31 @@ pub fn createSchema(conn: Connection) !void {
     try conn.exec(CREATE_AUDIT_TABLE);
     try conn.exec(CREATE_METADATA_TABLE);
 
+    // Create indexes for performance
+    try conn.exec(CREATE_INDEX_TASKS_STATUS);
+    try conn.exec(CREATE_INDEX_TASKS_PRIORITY);
+    try conn.exec(CREATE_INDEX_TASKS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_SPRINTS_STATUS);
+    try conn.exec(CREATE_INDEX_SPRINTS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_SPRINT_TASKS_TASK_ID);
+    try conn.exec(CREATE_INDEX_AUDIT_ENTITY);
+    try conn.exec(CREATE_INDEX_AUDIT_OPERATION);
+    try conn.exec(CREATE_INDEX_AUDIT_PERFORMED_AT);
+
     // Insert schema version
     try conn.exec(INSERT_SCHEMA_VERSION);
     try conn.exec(INSERT_APPLICATION);
+
+    // Create indexes for performance
+    try conn.exec(CREATE_INDEX_TASKS_STATUS);
+    try conn.exec(CREATE_INDEX_TASKS_PRIORITY);
+    try conn.exec(CREATE_INDEX_TASKS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_SPRINTS_STATUS);
+    try conn.exec(CREATE_INDEX_SPRINTS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_SPRINT_TASKS_TASK_ID);
+    try conn.exec(CREATE_INDEX_AUDIT_ENTITY);
+    try conn.exec(CREATE_INDEX_AUDIT_OPERATION);
+    try conn.exec(CREATE_INDEX_AUDIT_PERFORMED_AT);
 }
 
 /// Checks if schema exists by looking for _metadata table
@@ -133,6 +152,53 @@ pub const INSERT_SCHEMA_VERSION =
 /// Insert application name
 pub const INSERT_APPLICATION =
     \\INSERT OR REPLACE INTO _metadata (key, value) VALUES ('application', 'LRoadmap')
+;
+
+// ============== INDEXES ==============
+
+/// Index for tasks status filtering
+pub const CREATE_INDEX_TASKS_STATUS =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)
+;
+
+/// Index for tasks priority filtering
+pub const CREATE_INDEX_TASKS_PRIORITY =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)
+;
+
+/// Index for tasks created_at date range queries
+pub const CREATE_INDEX_TASKS_CREATED_AT =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)
+;
+
+/// Index for sprints status filtering
+pub const CREATE_INDEX_SPRINTS_STATUS =
+    \\CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status)
+;
+
+/// Index for sprints created_at date range queries
+pub const CREATE_INDEX_SPRINTS_CREATED_AT =
+    \\CREATE INDEX IF NOT EXISTS idx_sprints_created_at ON sprints(created_at)
+;
+
+/// Index for sprint_tasks task_id lookups
+pub const CREATE_INDEX_SPRINT_TASKS_TASK_ID =
+    \\CREATE INDEX IF NOT EXISTS idx_sprint_tasks_task_id ON sprint_tasks(task_id)
+;
+
+/// Index for audit entity lookups (entity_type, entity_id)
+pub const CREATE_INDEX_AUDIT_ENTITY =
+    \\CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit(entity_type, entity_id)
+;
+
+/// Index for audit operation filtering
+pub const CREATE_INDEX_AUDIT_OPERATION =
+    \\CREATE INDEX IF NOT EXISTS idx_audit_operation ON audit(operation)
+;
+
+/// Index for audit performed_at date range queries
+pub const CREATE_INDEX_AUDIT_PERFORMED_AT =
+    \\CREATE INDEX IF NOT EXISTS idx_audit_performed_at ON audit(performed_at)
 ;
 
 // ============== TESTS ==============

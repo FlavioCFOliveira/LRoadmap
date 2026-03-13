@@ -32,9 +32,27 @@ pub const Connection = struct {
             return error.DbOpenFailed;
         }
 
-        // Enable foreign keys
+        // Performance and reliability PRAGMAs
         const fk_rc = c.sqlite3_exec(db, "PRAGMA foreign_keys = ON", null, null, null);
         if (fk_rc != c.SQLITE_OK) {
+            _ = c.sqlite3_close(db);
+            return error.DbOpenFailed;
+        }
+
+        const wal_rc = c.sqlite3_exec(db, "PRAGMA journal_mode = WAL", null, null, null);
+        if (wal_rc != c.SQLITE_OK) {
+            _ = c.sqlite3_close(db);
+            return error.DbOpenFailed;
+        }
+
+        const sync_rc = c.sqlite3_exec(db, "PRAGMA synchronous = NORMAL", null, null, null);
+        if (sync_rc != c.SQLITE_OK) {
+            _ = c.sqlite3_close(db);
+            return error.DbOpenFailed;
+        }
+
+        const busy_rc = c.sqlite3_exec(db, "PRAGMA busy_timeout = 5000", null, null, null);
+        if (busy_rc != c.SQLITE_OK) {
             _ = c.sqlite3_close(db);
             return error.DbOpenFailed;
         }

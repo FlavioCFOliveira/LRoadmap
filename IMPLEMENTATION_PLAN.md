@@ -2,344 +2,331 @@
 
 ## Status Atual (2026-03-13)
 
-**Resultado da Auditoria:** Foram identificadas **10 inconformidades críticas** com a SPEC que necessitam correção.
+**Resultado da Auditoria Exaustiva:** Foram identificadas inconformidades críticas de performance e segurança, além de inconsistências com a SPEC. O código apresenta problemas desde a criação do schema (faltam índices), tratamento de erros inconsistente, e violações da especificação. O projeto necessita de correções fundamentais na camada de persistência e tratamento de erros.
 
 ---
 
 ## Tarefas por Prioridade
 
-### 🔴 ALTA PRIORIDADE (Bloqueantes)
+### 🔴 CRÍTICA (Bloqueantes & Performance)
 
-#### Tarefa 1: Corrigir Formato de Resposta JSON de Sucesso
-
-**Identificação:** T001-FIX-SUCCESS-JSON
-
-**Descrição Técnica:**
-O formato atual de resposta de sucesso retorna apenas o payload diretamente, sem o wrapper `{"success": true, "data": ...}` conforme especificado em DATA_FORMATS.md. É necessário atualizar a função `success()` em `src/utils/json.zig` e todos os pontos de chamada para incluir o wrapper correto.
-
-**Ficheiros Afetados:**
-- `src/utils/json.zig` - Função `success()`
-- `src/commands/roadmap.zig` - Todas as funções de comando
-- `src/commands/task.zig` - Todas as funções de comando
-- `src/commands/sprint.zig` - Todas as funções de comando
-- `src/commands/audit.zig` - Todas as funções de comando
-
+#### Tarefa 1: Criar Índices SQLite (CRÍTICO - Performance)
+**Identificação:** T001-CREATE-SQLITE-INDEXES
+**Necessidade:** A SPEC (DATABASE.md:77-80,96-97,114-115,131-134) define 9 índices essenciais para queries eficientes, mas o schema.zig NÃO os cria. Sem estes índices, operações de filtro (`--status`, `--priority`, `--since`) farão full table scans, tornando o sistema inutilizável com bases de dados grandes.
+**Descrição Técnica:** Adicionar à função `createSchema()` em `src/db/schema.zig` as instruções CREATE INDEX:
+```sql
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status);
+CREATE INDEX IF NOT EXISTS idx_sprints_created_at ON sprints(created_at);
+CREATE INDEX IF NOT EXISTS idx_sprint_tasks_task_id ON sprint_tasks(task_id);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_operation ON audit(operation);
+CREATE INDEX IF NOT EXISTS idx_audit_performed_at ON audit(performed_at);
+```
+**Ficheiros Afetados:** `src/db/schema.zig`
 **Critérios de Sucesso:**
-- [ ] Resposta de sucesso inclui `"success": true`
-- [ ] Payload está dentro de um objeto `data`
-- [ ] Formato: `{"success": true, "data": {...}}`
-- [ ] Exemplo: Criar task retorna `{"success": true, "data": {"id": 1, ...}}`
-- [ ] Todos os testes existentes passam com o novo formato
-- [ ] Verificar que `zig build test` executa sem falhas
+- [ ] Todos os 9 índices são criados aquando da criação do schema.
+- [ ] Queries com filtros por status, priority, entity_type são rápidas.
+**Validação:**
+```bash
+sqlite3 ~/.roadmaps/test.db "SELECT name FROM sqlite_master WHERE type='index';"
+# Deve retornar todos os 9 índices
+rmp task list -r test --status DOING  # Deve usar índice (EXPLAIN QUERY PLAN)
+```
 
----
-
-#### Tarefa 2: Corrigir Formato de Resposta de Erro
-
-**Identificação:** T002-FIX-ERROR-JSON
-
-**Descrição Técnica:**
-O formato atual de erro retorna apenas o objeto de erro sem o wrapper completo. Deve retornar `{"success": false, "error": {"code": "...", "message": "..."}}`. Além disso, os erros devem ser escritos para stderr, não stdout.
-
-**Ficheiros Afetados:**
-- `src/utils/json.zig` - Funções `errorResponse()` e `errorResponseWithDetails()`
-- `src/main.zig` - Redirecionar erros para stderr (linha 42-43)
-- `src/cli.zig` - Atualizar todos os pontos de retorno de erro
-
+#### Tarefa 2: Otimização de Performance e Robustez SQLite
+**Identificação:** T002-SQLITE-PERF-TUNING
+**Necessidade:** A conexão SQLite atual é sub-ótima. Sem WAL mode e busy_timeout, acessos simultâneos de leitura/escrita podem bloquear. A SPEC menciona "Prepared statements" e "Lazy loading" como requisitos de performance.
+**Descrição Técnica:** Implementar PRAGMAS na abertura da conexão em `src/db/connection.zig:open()`:
+```zig
+try conn.exec("PRAGMA journal_mode = WAL");
+try conn.exec("PRAGMA synchronous = NORMAL");
+try conn.exec("PRAGMA busy_timeout = 5000");
+try conn.exec("PRAGMA foreign_keys = ON");
+```
+**Ficheiros Afetados:** `src/db/connection.zig`
 **Critérios de Sucesso:**
-- [ ] Resposta de erro inclui `"success": false`
-- [ ] Objeto de erro está dentro de `error`
-- [ ] Formato: `{"success": false, "error": {"code": "...", "message": "..."}}`
-- [ ] Erros são escritos para stderr (usar `std.fs.File.stderr()`)
-- [ ] Mensagens de erro aparecem em stderr quando redirecionado (`rmp cmd 2>/dev/null`)
+- [ ] O sistema não bloqueia em acessos simultâneos de leitura/escrita.
+- [ ] Performance de operações bulk melhorada.
+**Validação:** Testar com script que faz leituras e escritas concorrentes. Medir tempo de operações bulk com `time`.
 
----
-
-#### Tarefa 3: Implementar Exibição de Help para Erros de Input
-
-**Identificação:** T003-ADD-HELP-ON-ERROR
-
-**Descrição Técnica:**
-Conforme DATA_FORMATS.md, quando ocorrem erros relacionados a inputs (parâmetros em falta, tipos inválidos, comandos desconhecidos), deve ser exibida a mensagem de erro seguida do help do comando. Atualmente apenas é retornado o erro em JSON.
-
-**Ficheiros Afetados:**
-- `src/cli.zig` - Adicionar lógica de exibição de help
-- Criar estrutura de help por comando
-
+#### Tarefa 3: Corrigir Entity Types em Operações Audit (VIOLAÇÃO SPEC)
+**Identificação:** T003-FIX-ENTITY-TYPE-CASE
+**Necessidade:** A SPEC (DATABASE.md:139,168) define claramente que `entity_type` deve ser `'TASK'` ou `'SPRINT'` (maiúsculas). O código usa minúsculas `"task"`, `"sprint"`, `"roadmap"` violando a especificação. Isso quebra queries de auditoria.
+**Descrição Técnica:** Substituir todas as strings literais minúsculas por maiúsculas:
+- `src/commands/task.zig:51`: `"task"` → `"TASK"`
+- `src/commands/task.zig:225`: `"task"` → `"TASK"`
+- `src/commands/task.zig:300`: `"task"` → `"TASK"`
+- `src/commands/task.zig:375`: `"task"` → `"TASK"`
+- `src/commands/task.zig:477`: `"task"` → `"TASK"`
+- `src/commands/sprint.zig:48`: `"sprint"` → `"SPRINT"`
+- `src/commands/sprint.zig:112,115,181`: `"sprint"` → `"SPRINT"`
+- `src/commands/sprint.zig:290,352,457,570,605`: `"sprint"` → `"SPRINT"`
+- `src/commands/roadmap.zig:132`: `"roadmap"` → `"ROADMAP"` (ou remover se não especificado)
+**Ficheiros Afetados:** `src/commands/task.zig`, `src/commands/sprint.zig`, `src/commands/roadmap.zig`
 **Critérios de Sucesso:**
-- [ ] Erro de parâmetro em falta mostra help do comando após a mensagem de erro
-- [ ] Erro de comando desconhecido mostra help geral
-- [ ] Erro de subcomando inválido mostra help do comando pai
-- [ ] Help aparece em stdout (erro em stderr, help em stdout)
-- [ ] Exit code 2 para erros de misuse
+- [ ] Todas as chamadas a `logOperation` usam maiúsculas.
+- [ ] `SELECT DISTINCT entity_type FROM audit;` retorna apenas `TASK`, `SPRINT`.
+**Validação:** Executar operações e verificar audit log: `rmp audit list -r test -e TASK`
 
----
-
-### 🟠 MÉDIA PRIORIDADE (Funcionalidade)
-
-#### Tarefa 4: Implementar Bulk Operations para Tasks
-
-**Identificação:** T004-IMPL-BULK-OPS
-
-**Descrição Técnica:**
-A SPEC define que comandos como `rmp task stat`, `rmp task prio`, `rmp task sev`, e `rmp task rm` devem aceitar múltiplos IDs separados por vírgula (ex: `1,2,3,10`). Atualmente estas funções aceitam apenas um único ID.
-
-**Ficheiros Afetados:**
-- `src/cli.zig` - Parse de múltiplos IDs
-- `src/commands/task.zig`:
-  - `changeTaskStatus()` - Aceitar `[]i64` em vez de `i64`
-  - `setPriority()` - Aceitar `[]i64`
-  - `setSeverity()` - Aceitar `[]i64`
-  - `deleteTask()` - Aceitar `[]i64`
-- `src/db/queries.zig` - Queries de update com `WHERE id IN (...)`
-
+#### Tarefa 4: Atomicidade e Transações em Operações de Escrita Bulk
+**Identificação:** T004-DB-TRANSACTIONS
+**Necessidade:** Operações bulk (changeTaskStatus, setPriority, setSeverity, deleteTask) atualizam múltiplos registos sem transação. Se falhar a meio, ficam dados inconsistentes. A SPEC menciona "atomicidade" como requisito.
+**Descrição Técnica:** Envolver operações bulk em transações SQL explícitas:
+```zig
+try conn.beginTransaction();
+// ... loop de updates ...
+try conn.commit();
+// Em caso de erro: try conn.rollback();
+```
+**Ficheiros Afetados:** `src/commands/task.zig` (changeTaskStatus, setPriority, setSeverity, deleteTask)
 **Critérios de Sucesso:**
-- [ ] `rmp task stat -r project1 1,2,3 DOING` funciona e atualiza 3 tasks
-- [ ] `rmp task prio -r project1 5,6,7 9` funciona e atualiza prioridade de múltiplas tasks
-- [ ] `rmp task rm -r project1 1,2,3` remove múltiplas tasks
-- [ ] Resposta inclui array de IDs atualizados: `{"updated": [1, 2, 3], "count": 3}`
-- [ ] Se um ID não existir, retorna erro indicando IDs em falta
-- [ ] Suporte a até 100 IDs por operação
+- [ ] Garantia de "Tudo ou Nada" em operações bulk.
+- [ ] Rollback automático em caso de falha.
+**Validação:** Simular falha no meio de operação bulk e verificar que Rollback preserva estado anterior.
 
----
+#### Tarefa 5: Auditoria Mandatária - Remover `catch {}`
+**Identificação:** T005-AUDIT-HARDENING
+**Necessidade:** O log de auditoria é crítico para rastreabilidade. O código atual silencia erros de auditoria com `catch {}`, permitindo que operações sejam executadas sem registo. Isso viola o requisito de "Complete Audit" da SPEC.
+**Descrição Técnica:** Remover todos os `catch {}` de chamadas `logOperation`. O erro de auditoria deve propagar e falhar a operação:
+```zig
+// ANTES (errado):
+queries.logOperation(conn, "TASK_CREATE", "task", task_id, now) catch {};
 
-#### Tarefa 5: Corrigir Operações Audit na Enum
-
-**Identificação:** T005-FIX-AUDIT-OPS
-
-**Descrição Técnica:**
-A enum `OperationType` em `models/audit.zig` usa nomes diferentes dos definidos na SPEC. Além disso, faltam operações como `SPRINT_GET`, `SPRINT_STATS`, etc.
-
-**Mapeamento de Correções:**
-| Atual | Correto |
-|-------|---------|
-| `TASK_ADDED_TO_SPRINT` | `SPRINT_ADD_TASK` |
-| `TASK_REMOVED_FROM_SPRINT` | `SPRINT_REMOVE_TASK` |
-| `TASK_MOVED_BETWEEN_SPRINTS` | `SPRINT_MOVE_TASK` |
-| (falta) | `SPRINT_GET` |
-| (falta) | `SPRINT_STATS` |
-| (falta) | `SPRINT_LIST_TASKS` |
-
-**Ficheiros Afetados:**
-- `src/models/audit.zig` - Atualizar enum `OperationType`
-- `src/commands/sprint.zig` - Atualizar chamadas a `logOperation()`
-- `src/commands/task.zig` - Atualizar chamadas se necessário
-
+// DEPOIS (correto):
+try queries.logOperation(conn, "TASK_CREATE", "TASK", task_id, now);
+```
+**Referências:**
+- `src/commands/roadmap.zig:132`
+- `src/commands/sprint.zig:48,112,115,181`
+**Ficheiros Afetados:** `src/commands/roadmap.zig`, `src/commands/sprint.zig`
 **Critérios de Sucesso:**
-- [ ] Enum contém todas as operações da SPEC
-- [ ] Nomes coincidem exatamente com DATA_FORMATS.md linhas 372-398
-- [ ] Todas as operações de sprint são logadas com nomes corretos
-- [ ] Testes verificam que os nomes das operações estão corretos
+- [ ] Integridade absoluta do log de auditoria.
+- [ ] Operações falham se audit log falhar.
+**Validação:** Forçar erro na tabela audit (ex: tabela bloqueada) e verificar que operações falham com erro apropriado.
 
 ---
 
-#### Tarefa 6: Corrigir Ordenação de Tasks em Sprint
+### 🟠 ALTA PRIORIDADE (Conformidade & Qualidade)
 
-**Identificação:** T006-FIX-SPRINT-ORDER
+#### Tarefa 6: Corrigir Formato de Sprint Stats (SPEC Compliance)
+**Identificação:** T006-FIX-SPRINT-STATS-FORMAT
+**Necessidade:** A SPEC (COMMANDS.md:537) define que o JSON de resposta de sprint stats deve usar `"sprint_id"` mas o código usa `"id"`. Isso quebra integrações que esperam o formato especificado.
+**Descrição Técnica:** Alterar linha em `src/commands/sprint.zig:533`:
+```zig
+// ANTES:
+\\{{"id":{d},...
 
-**Descrição Técnica:**
-Conforme SPEC (DATA_FORMATS.md:349-353), as tasks num sprint devem ser ordenadas por `priority DESC, severity DESC`. Atualmente está ordenado por `priority DESC, created_at ASC`.
-
-**Ficheiros Afetados:**
-- `src/db/queries.zig` - Função `getTasksBySprint()` (linha ~430)
-- Verificar também `getTasksBySprintFiltered()`
-
+// DEPOIS:
+\\{{"sprint_id":{d},...
+```
+**Ficheiros Afetados:** `src/commands/sprint.zig:533-548`
 **Critérios de Sucesso:**
-- [ ] Query usa `ORDER BY t.priority DESC, t.severity DESC`
-- [ ] Tasks com mesma prioridade são ordenadas por severidade (mais alta primeiro)
-- [ ] Testes verificam a ordem correta no output JSON
+- [ ] Saída JSON usa `"sprint_id"` conforme COMMANDS.md:537.
+**Validação:** `rmp sprint stats -r project1 1 | jq '.sprint_id'` deve retornar o ID.
 
----
-
-#### Tarefa 7: Completar Sprint Stats
-
-**Identificação:** T007-COMPLETE-SPRINT-STATS
-
-**Descrição Técnica:**
-O objeto de resposta de sprint stats está incompleto. Falta incluir: `description`, `status`, `created_at`, `started_at`, `closed_at`.
-
-**Ficheiros Afetados:**
-- `src/commands/sprint.zig` - Função `getSprintStats()` (linha ~465)
-- `src/db/queries.zig` - Query `getSprintStats()` (linha ~638) - precisa fazer JOIN com sprints
-
+#### Tarefa 7: Validar Transições de Estado Task
+**Identificação:** T007-USE-TASK-STATUS-VALIDATION
+**Necessidade:** O modelo `TaskStatus.isValidTransition()` existe mas não é usado. A SPEC define o fluxo: `BACKLOG → SPRINT → DOING → TESTING → COMPLETED`. Transições inválidas como `BACKLOG → COMPLETED` devem ser rejeitadas.
+**Descrição Técnica:** Adicionar validação em `changeTaskStatus()` antes de atualizar:
+```zig
+const current_status = try queries.getTaskStatus(conn, task_id);
+if (!current_status.isValidTransition(new_status)) {
+    return json.errorResponse(allocator, "INVALID_STATUS_TRANSITION",
+        "Cannot transition from BACKLOG to COMPLETED");
+}
+```
+**Ficheiros Afetados:** `src/commands/task.zig:164-244`, `src/db/queries.zig`
 **Critérios de Sucesso:**
-- [ ] Resposta inclui `description`, `status`, `created_at`, `started_at`, `closed_at`
-- [ ] Formato conforme SPEC (COMMANDS.md:537-558)
-- [ ] Datas em formato ISO 8601
-- [ ] Valores null para datas não definidas
+- [ ] Transições inválidas são rejeitadas com erro apropriado.
+- [ ] Mensagem de erro indica estados válidos.
+**Validação:** Testar `rmp task stat -r test 1 COMPLETED` quando task está em BACKLOG. Deve falhar.
 
----
-
-### 🟡 BAIXA PRIORIDADE (Qualidade)
-
-#### Tarefa 8: Adicionar Transações SQL em Operações Compostas
-
-**Identificação:** T008-ADD-TRANSACTIONS
-
+#### Tarefa 8: Ciclo de Vida do Sprint - Preencher closed_at
+**Identificação:** T008-FIX-SPRINT-LIFECYCLE-DATES
+**Necessidade:** Quando um sprint fecha, `closed_at` deve ser preenchido. Quando reabre, deve ser limpo. O código atual em `closeSprint()` não define `closed_at`, e `reopenSprint()` já limpa mas precisa verificação.
 **Descrição Técnica:**
-Operações que envolvem múltiplas queries (ex: adicionar task a sprint + atualizar status) devem usar transações para garantir consistência. Atualmente se falhar no meio, o estado fica inconsistente.
-
-**Ficheiros Afetados:**
-- `src/commands/sprint.zig`:
-  - `addTaskToSprint()` - Usar transação para `addTaskToSprint` + `updateTaskStatus`
-  - `removeTaskFromSprint()` - Usar transação para `removeTaskFromSprint` + `updateTaskStatus`
-  - `moveTaskBetweenSprints()` - Usar transação
-
+- Em `closeSprint()`: adicionar `try queries.updateSprintClosedAt(conn, sprint_id, now);`
+- Verificar que `reopenSprint()` limpa `closed_at` (já implementado na linha 489).
+**Ficheiros Afetados:** `src/commands/sprint.zig:176-181`
 **Critérios de Sucesso:**
-- [ ] Operações usam `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`
-- [ ] Se uma parte falha, é feito rollback
-- [ ] Testes simulam falhas e verificam consistência
+- [ ] `closed_at` preenchido após `sprint close`.
+- [ ] `closed_at` = null após `sprint reopen`.
+**Validação:** Verificar na base de dados após transições de estado.
 
----
-
-#### Tarefa 9: Validar Range de Prioridade/Severidade (0-9)
-
-**Identificação:** T009-VALIDATE-RANGES
-
-**Descrição Técnica:**
-As funções `setPriority()` e `setSeverity()` devem validar que os valores estão entre 0-9 antes de atualizar. A validação existe no modelo (Task.setPriority) mas não é usada nos comandos.
-
-**Ficheiros Afetados:**
-- `src/commands/task.zig` - Funções `setPriority()` e `setSeverity()`
-- `src/cli.zig` - Validação prévia dos argumentos
-
+#### Tarefa 9: Adicionar Campo "roadmap" em Sprint List
+**Identificação:** T009-FIX-SPRINT-LIST-RESPONSE
+**Necessidade:** Para consistência com `listTasks`, a resposta de `listSprints` deve incluir o campo `"roadmap"`.
+**Descrição Técnica:** Modificar `src/commands/sprint.zig:235` para incluir:
+```zig
+const result = try std.fmt.allocPrint(allocator,
+    "{{\"roadmap\":\"{s}\",\"count\":{d},\"sprints\":[{s}]}}",
+    .{ current, sprints.len, sprints_str });
+```
+**Ficheiros Afetados:** `src/commands/sprint.zig:235`
 **Critérios de Sucesso:**
-- [ ] Valores < 0 ou > 9 retornam erro `INVALID_PRIORITY` ou `INVALID_SEVERITY`
-- [ ] Exit code 6 para dados inválidos
-- [ ] Mensagem de erro clara indica o range válido (0-9)
+- [ ] Response inclui `"roadmap":"<name>"`.
+**Validação:** `rmp sprint list -r project1 | jq '.roadmap'` retorna nome do roadmap.
 
----
-
-#### Tarefa 10: Corrigir Duplicação de Log em Roadmap Create
-
-**Identificação:** T010-FIX-DUPLICATE-LOG
-
-**Descrição Técnica:**
-Em `roadmap.zig` linhas 131-135, a operação `ROADMAP_CREATE` é logada duas vezes.
-
-**Ficheiros Afetados:**
-- `src/commands/roadmap.zig` - Remover linha duplicada 135
-
+#### Tarefa 10: Erros em Plain Text para Stderr
+**Identificação:** T010-FIX-ERROR-OUTPUT-FORMAT
+**Necessidade:** A SPEC (DATA_FORMATS.md:14-17, COMMANDS.md:16-17) define que erros vão para stderr em plain text, não JSON. O handler de erros em main.zig usa JSON.
+**Descrição Técnica:** Modificar `src/main.zig:35-44` para escrever plain text em stderr:
+```zig
+cli.run(allocator, args) catch |err| {
+    const stderr = std.fs.File.stderr().deprecatedWriter();
+    stderr.print("Error: {s}\n", .{@errorName(err)}) catch {};
+    std.process.exit(1);
+};
+```
+**Ficheiros Afetados:** `src/main.zig:35-44`
 **Critérios de Sucesso:**
-- [ ] Código duplicado removido
-- [ ] Apenas uma entrada de audit por roadmap criado
+- [ ] Erros fatais em main são plain text para stderr.
+**Validação:** Provocar erro e verificar output: `rmp invalid-command 2>&1 | head -1`
 
 ---
 
-## Tarefas Adicionais (Melhorias)
+### 🟡 MÉDIA PRIORIDADE (Manutenibilidade & Refatoração)
 
-### Tarefa 11: Adicionar Alias `aud` para Comando Audit
-
-**Identificação:** T011-ADD-AUDIT-ALIAS
-
-**Descrição Técnica:**
-Adicionar o alias curto `aud` para o comando `audit`, conforme mencionado na SPEC (COMMANDS.md:825).
-
+#### Tarefa 11: Implementar Help em JSON Estruturado
+**Identificação:** T011-IMPL-STRUCTURED-HELP
+**Necessidade:** A SPEC (DATA_FORMATS.md:628-676) define que help deve retornar JSON estruturado com command, description, usage, options, examples. Atualmente é plain text.
+**Descrição Técnica:** Reimplementar help em `src/cli.zig` para retornar:
+```json
+{
+  "success": true,
+  "data": {
+    "command": "task create",
+    "description": "Creates a new task...",
+    "usage": "rmp task create [OPTIONS]",
+    "options": [...],
+    "examples": [...]
+  }
+}
+```
+**Ficheiros Afetados:** `src/cli.zig:91-93, 139-142` e funções de help associadas
 **Critérios de Sucesso:**
-- [ ] `rmp aud list` funciona como `rmp audit list`
-- [ ] `rmp aud hist` funciona como `rmp audit history`
-- [ ] `rmp aud stats` funciona como `rmp audit stats`
+- [ ] `rmp --help` e `rmp task create --help` retornam JSON válido.
+**Validação:** `rmp task create --help | jq .` produz JSON válido.
 
----
+#### Tarefa 12: Migração Global para ArrayListUnmanaged (Zig 0.15)
+**Identificação:** T012-MIGRATE-ARRAYLIST-UNMANAGED
+**Necessidade:** Zig 0.15 prefere `std.ArrayListUnmanaged` para melhor performance. `src/utils/path.zig:138` ainda usa `std.ArrayList([]const u8).init(allocator)`.
+**Descrição Técnica:** Converter todos os `std.ArrayList(T)` restantes para `std.ArrayListUnmanaged(T)`:
+```zig
+// ANTES:
+var names = std.ArrayList([]const u8).init(allocator);
 
-### Tarefa 12: Melhorar Validação de Binding SQLite
-
-**Identificação:** T012-VALIDATE-SQLITE-BIND
-
-**Descrição Técnica:**
-Verificar códigos de retorno de `sqlite3_bind_*` em vez de ignorar com `_ =`.
-
-**Ficheiros Afetados:**
-- `src/db/queries.zig` - Todas as funções que fazem bind
-
+// DEPOIS:
+var names: std.ArrayListUnmanaged([]const u8) = .empty;
+defer names.deinit(allocator);
+```
+**Ficheiros Afetados:** `src/utils/path.zig:138` e outros usos remanescentes
 **Critérios de Sucesso:**
-- [ ] Verificar se `sqlite3_bind_*` retorna `SQLITE_OK`
-- [ ] Retornar erro apropriado se binding falhar
+- [ ] Código compila sem warnings de depreciação.
+- [ ] Testes passam.
+**Validação:** `zig build test` sem erros.
+
+#### Tarefa 13: Eliminar Duplicação de Código
+**Identificação:** T013-REMOVE-DUPLICATED-CODE
+**Necessidade:** A função `isValidSQLiteFile` existe em dois ficheiros (`connection.zig:90-101` e `path.zig:97-108`), violando DRY.
+**Descrição Técnica:** Manter apenas em `connection.zig` e remover de `path.zig`. Atualizar importações se necessário.
+**Ficheiros Afetados:** `src/db/connection.zig`, `src/utils/path.zig`
+**Critérios de Sucesso:**
+- [ ] Apenas uma implementação de `isValidSQLiteFile`.
+- [ ] Testes passam.
+**Validação:** `grep -r "isValidSQLiteFile" src/` retorna apenas uma definição.
+
+#### Tarefa 14: Sprint Tasks Deve Retornar Campo roadmap
+**Identificação:** T014-FIX-SPRINT-TASKS-RESPONSE
+**Necessidade:** `sprint tasks` deve incluir campo `"roadmap"` e ordenar por priority DESC, severity DESC conforme SPEC (COMMANDS.md:420-468).
+**Descrição Técnica:** Verificar e corrigir `listSprintTasks()` para incluir campo roadmap e ordenação correta.
+**Ficheiros Afetados:** `src/commands/sprint.zig:399-437`
+**Critérios de Sucesso:**
+- [ ] Response inclui `"roadmap"`.
+- [ ] Tasks ordenadas por priority DESC, severity DESC.
+**Validação:** `rmp sprint tasks -r test 1 | jq '.roadmap'` e verificar ordenação.
 
 ---
 
-## Resumo de Implementação
+### 🟢 BAIXA PRIORIDADE (Melhorias Opcionais)
 
-| Categoria | Tarefas | Prioridade | % Completo |
-|-----------|---------|------------|------------|
-| **Alta** | 4 | 🔴 | 100% |
-| **Média** | 4 | 🟠 | 100% |
-| **Baixa** | 3 | 🟡 | 100% |
-| **Melhorias** | 2 | ⚪ | 100% |
+#### Tarefa 15: Implementar Prepared Statements Cache
+**Identificação:** T015-PREPARED-STATEMENTS-CACHE
+**Necessidade:** A SPEC (ARCHITECTURE.md:209) menciona "Prepared statements: Pre-compiled SQLite queries" como requisito de performance.
+**Descrição Técnica:** Implementar cache de prepared statements para queries frequentes.
+**Ficheiros Afetados:** `src/db/queries.zig`
+**Critérios de Sucesso:**
+- [ ] Prepared statements reutilizados entre chamadas.
+**Validação:** Benchmark de operações repetidas.
 
-**Progresso Total:** 100%
-
-### Tarefas Concluídas
-
-- **T010** ✅ - Corrigir duplicação de log em roadmap.zig
-- **T002** ✅ - Corrigir formato de erro JSON (wrapper + stderr)
-- **T001** ✅ - Corrigir formato de sucesso JSON (wrapper)
-- **T003** ✅ - Implementar help em erros de input
-- **T006** ✅ - Corrigir ordenação de tasks em sprint
-- **T005** ✅ - Corrigir enum OperationType em audit.zig
-- **T004** ✅ - Implementar bulk operations para tasks
-- **T007** ✅ - Completar sprint stats (já estava implementado)
-- **T008** ✅ - Adicionar transações SQL em operações compostas
-- **T009** ✅ - Validar ranges de prioridade/severidade (0-9)
-- **T011** ✅ - Adicionar alias `aud` para comando audit
-- **T012** ✅ - Validar SQLite binds (funções helper criadas)
+#### Tarefa 16: Adicionar Testes de Integração
+**Identificação:** T016-INTEGRATION-TESTS
+**Necessidade:** Testes unitários existem mas não cobrem cenários de integração E2E.
+**Descrição Técnica:** Criar testes que exercitam fluxos completos: create → list → update → delete.
+**Ficheiros Afetados:** Novo ficheiro `tests/integration.zig`
+**Critérios de Sucesso:**
+- [ ] Fluxos completos testados.
+**Validação:** `zig build test` inclui testes de integração.
 
 ---
 
----
+## Matriz de Rastreabilidade (SPEC vs Tarefa)
 
-## Ordem de Implementação Recomendada
-
-### Fase 1: Correções Críticas (Alta Prioridade)
-1. **T010** - Corrigir duplicação (rápido)
-2. **T002** - Corrigir formato de erro JSON
-3. **T001** - Corrigir formato de sucesso JSON
-4. **T003** - Implementar help em erros de input
-
-### Fase 2: Funcionalidades Média Prioridade
-5. **T006** - Corrigir ordenação de tasks
-6. **T005** - Corrigir operações audit
-7. **T004** - Implementar bulk operations
-8. **T007** - Completar sprint stats
-
-### Fase 3: Qualidade e Robustez
-9. **T009** - Validar ranges
-10. **T008** - Adicionar transações
-11. **T011** - Alias audit
-12. **T012** - Validar SQLite binds
-
----
-
-## Referências
-
-- **SPEC/COMMANDS.md**: Documentação completa dos comandos
-- **SPEC/COMMANDS_REFERENCE.md**: Referência rápida com exemplos
-- **SPEC/DATA_FORMATS.md**: Formatos de JSON esperados (fonte da maior parte das inconformidades)
-- **SPEC/DATABASE.md**: Schema da base de dados
-- **SPEC/ARCHITECTURE.md**: Arquitetura do sistema
+| Requisito SPEC | Tarefa | Prioridade |
+|----------------|--------|------------|
+| Database Indexes (DATABASE.md:77-80,96-97,114-115,131-134) | T001 | CRÍTICA |
+| SQLite PRAGMAs (Performance) | T002 | CRÍTICA |
+| Audit Entity Types maiúsculos (DATABASE.md:139,168) | T003 | CRÍTICA |
+| Atomicidade em bulk operations | T004 | CRÍTICA |
+| Audit mandatory (não falhar silenciosamente) | T005 | CRÍTICA |
+| Sprint stats "sprint_id" (COMMANDS.md:537) | T006 | ALTA |
+| Task status validation (SPEC: status flow) | T007 | ALTA |
+| Sprint closed_at lifecycle | T008 | ALTA |
+| Sprint list roadmap field | T009 | ALTA |
+| Error plain text to stderr (DATA_FORMATS.md:14-17) | T010 | ALTA |
+| Help em JSON (DATA_FORMATS.md:628) | T011 | MÉDIA |
+| ArrayListUnmanaged (Zig 0.15) | T012 | MÉDIA |
+| DRY - isValidSQLiteFile | T013 | MÉDIA |
+| Sprint tasks roadmap + ordering | T014 | MÉDIA |
+| Prepared statements (ARCHITECTURE.md:209) | T015 | BAIXA |
+| Integration tests | T016 | BAIXA |
 
 ---
 
-## Notas da Auditoria
+## Notas de Implementação
 
-| ID | Inconformidade | Local | Severidade |
-|----|----------------|-------|------------|
-| INF001 | Formato JSON sucesso incorreto | `json.zig` | 🔴 Alta |
-| INF002 | Formato JSON erro incorreto | `json.zig` | 🔴 Alta |
-| INF003 | Erros vão para stdout | `main.zig:42-43` | 🔴 Alta |
-| INF004 | Operações audit não conforme | `models/audit.zig` | 🟠 Média |
-| INF005 | Bulk operations não implementadas | `task.zig` | 🟠 Média |
-| INF006 | Sprint stats incompleto | `sprint.zig:480-494` | 🟠 Média |
-| INF007 | Ordenação sprint tasks incorreta | `queries.zig:436` | 🟠 Média |
-| INF008 | Sem transações | `sprint.zig`, `task.zig` | 🟡 Baixa |
-| INF009 | Falta validação range | `task.zig` | 🟡 Baixa |
-| INF010 | Código duplicado | `roadmap.zig:131-135` | 🟡 Baixa |
+### Padrões Críticos Zig 0.15
+1. **SQLite C API:** Sempre use `@ptrCast(conn.db)` para passar para funções C.
+2. **Memória:** Use `std.ArrayListUnmanaged` com allocator explícito.
+3. **Atomicidade:** Sempre abra transação antes de loops de escrita.
+4. **Dates:** ISO 8601 UTC garantido por `utils/time.zig`.
+5. **JSON:** Considerar migrar para `std.json.stringify` se volume aumentar.
+
+### Ficheiros com Problemas Críticos
+- `src/db/schema.zig` - NÃO CRIA ÍNDICES (T001)
+- `src/db/connection.zig` - PRAGMAS INCOMPLETOS (T002)
+- `src/commands/task.zig` - SEM TRANSAÇÕES (T004), ENTITY TYPES MINÚSCULOS (T003)
+- `src/commands/roadmap.zig:132` - `catch {}` (T005)
+- `src/commands/sprint.zig:48,112,115,181` - `catch {}` (T005), ENTITY TYPES MINÚSCULOS (T003)
+
+### Fluxo de Status Task (SPEC)
+```
+BACKLOG → SPRINT → DOING → TESTING → COMPLETED
+    ↓         ↓        ↓        ↓
+ BACKLOG  BACKLOG  SPRINT   DOING
+```
+Transições inválidas: BACKLOG → DOING, BACKLOG → COMPLETED, etc.
+
+### Fluxo de Status Sprint (SPEC)
+```
+PENDING → OPEN → CLOSED
+            ↑        ↓
+            └────────┘ (reopen)
+```
 
 ---
 
-## Histórico de Alterações
-
-| Data | Descrição |
-|------|-----------|
-| 2026-03-13 | Plano atualizado após auditoria exaustiva - identificadas 10 inconformidades críticas |
-| 2026-03-12 | Versão anterior (funcionalidades implementadas) |
+*Plano atualizado após auditoria exaustiva em 2026-03-13.*
