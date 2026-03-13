@@ -50,6 +50,8 @@ rmp sprint add -r project1 1 1,2,3
 
 ## Installation
 
+### Build and Install
+
 ```bash
 # Clone repository
 git clone https://github.com/yourusername/LRoadmap.git
@@ -60,6 +62,106 @@ zig build
 
 # Install binary
 zig build install
+```
+
+### Install Locations
+
+The `zig build install` command places the `rmp` binary in different locations depending on your operating system:
+
+#### Linux
+
+Standard installation paths:
+- **System-wide**: `/usr/local/bin/rmp` (recommended for all users)
+- **User-local**: `~/.local/bin/rmp` (recommended for single user)
+- **Zig default**: `zig-out/bin/rmp` (relative to project directory)
+
+To install system-wide:
+```bash
+sudo cp zig-out/bin/rmp /usr/local/bin/
+sudo chmod +x /usr/local/bin/rmp
+```
+
+To install user-local:
+```bash
+mkdir -p ~/.local/bin
+cp zig-out/bin/rmp ~/.local/bin/
+# Add to PATH if not already present
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### macOS
+
+Standard installation paths:
+- **System-wide**: `/usr/local/bin/rmp` (Intel Macs)
+- **Apple Silicon**: `/opt/homebrew/bin/rmp` (recommended for M1/M2/M3)
+- **User-local**: `~/.local/bin/rmp` or `~/bin/rmp`
+
+Using Homebrew (recommended):
+```bash
+# After building
+cp zig-out/bin/rmp /opt/homebrew/bin/  # Apple Silicon
+# or
+cp zig-out/bin/rmp /usr/local/bin/      # Intel Macs
+```
+
+Manual installation:
+```bash
+mkdir -p ~/bin
+cp zig-out/bin/rmp ~/bin/
+# Add to PATH
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### Windows
+
+Standard installation paths:
+- **System-wide**: `C:\Program Files\LRoadmap\rmp.exe`
+- **User-local**: `%LOCALAPPDATA%\Programs\LRoadmap\rmp.exe`
+- **Zig default**: `zig-out\bin\rmp.exe` (relative to project directory)
+
+Manual installation (PowerShell):
+```powershell
+# Create directory
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\Programs\LRoadmap"
+
+# Copy binary
+Copy-Item "zig-out\bin\rmp.exe" "$env:LOCALAPPDATA\Programs\LRoadmap\"
+
+# Add to PATH (current session)
+$env:PATH += ";$env:LOCALAPPDATA\Programs\LRoadmap"
+
+# Add to PATH (permanent)
+[Environment]::SetEnvironmentVariable("Path", $env:PATH + ";$env:LOCALAPPDATA\Programs\LRoadmap", "User")
+```
+
+### Verify Installation
+
+After installation, verify the binary is accessible:
+
+```bash
+# Check if rmp is in PATH
+which rmp      # Linux/macOS
+where rmp      # Windows
+
+# Verify version
+rmp --version
+```
+
+### Uninstall
+
+To remove the installed binary:
+
+**Linux/macOS:**
+```bash
+rm /usr/local/bin/rmp        # System-wide
+rm ~/.local/bin/rmp          # User-local
+```
+
+**Windows (PowerShell):**
+```powershell
+Remove-Item "$env:LOCALAPPDATA\Programs\LRoadmap\rmp.exe"
 ```
 
 ## Claude Code Skill
@@ -77,21 +179,20 @@ LRoadmap includes a dedicated skill for Claude Code that enables agentic workflo
 ### Quick Start with Skill
 
 ```bash
-# In Claude Code, the skill is automatically available
-# Just ask Claude to:
+# In Claude Code, invoke the skill with /roadmap
 
 # Create and manage sprints
-"Create a new sprint for the API authentication features"
-"Start sprint 1 and add the backlog tasks to it"
+"/roadmap Create a new sprint for the API authentication features"
+"/roadmap Start sprint 1 and add the backlog tasks to it"
 
 # Manage tasks
-"Create a high-priority task for implementing JWT middleware"
-"Mark tasks 1,2,3 as DOING"
-"Show me the sprint progress"
+"/roadmap Create a high-priority task for implementing JWT middleware"
+"/roadmap Mark tasks 1,2,3 as DOING"
+"/roadmap Show me the sprint progress"
 
 # Analyze progress
-"Show sprint statistics"
-"List all completed tasks"
+"/roadmap Show sprint statistics"
+"/roadmap List all completed tasks"
 ```
 
 See [SKILL.md](SKILL.md) for complete documentation including:
@@ -198,13 +299,12 @@ LRoadmap includes a Claude Code skill for orchestrated task and sprint managemen
 ### Quick Start with Claude
 
 ```bash
-# In Claude Code, the skill is automatically loaded
-# You can ask Claude to:
+# In Claude Code, invoke the skill with /roadmap
 
-"Create a new sprint for the authentication feature"
-"Show me the current sprint progress"
-"Move task 5 to testing status"
-"Generate a sprint completion report"
+"/roadmap Create a new sprint for the authentication feature"
+"/roadmap Show me the current sprint progress"
+"/roadmap Move task 5 to testing status"
+"/roadmap Generate a sprint completion report"
 ```
 
 ### Installation for Agentic Workflows

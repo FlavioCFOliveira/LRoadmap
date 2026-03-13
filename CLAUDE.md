@@ -22,16 +22,16 @@ The skill is automatically available when working in this repository. Key capabi
 
 ```
 # Activate sprint orchestrator mode
-"Act as sprint orchestrator for roadmap <name>"
+"/roadmap Act as sprint orchestrator for roadmap <name>"
 
 # Create structured tasks
-"Create a high-priority task for implementing authentication"
+"/roadmap Create a high-priority task for implementing authentication"
 
 # Manage sprint lifecycle
-"Start sprint 1 and add tasks 1,2,3 to it"
+"/roadmap Start sprint 1 and add tasks 1,2,3 to it"
 
 # Monitor progress
-"Show sprint statistics and current progress"
+"/roadmap Show sprint statistics and current progress"
 ```
 
 See [SKILL.md](SKILL.md) for complete documentation on agentic workflows and command patterns.
@@ -46,8 +46,9 @@ See [SKILL.md](SKILL.md) for complete documentation on agentic workflows and com
 
 ## Build Commands
 
+### Native Build (Default)
 ```bash
-# Build the project
+# Build the project for native architecture
 zig build
 
 # Build and run
@@ -56,8 +57,39 @@ zig build run
 # Run tests
 zig build test
 
-# Install binary
-zig build install
+# Clean build artifacts
+zig build clean
+```
+
+### Cross-Compilation
+```bash
+# Build for a specific architecture
+zig build -Dtarget-arch=x86_64_linux
+zig build -Dtarget-arch=aarch64_macos
+
+# Build for all supported architectures (requires target libraries)
+zig build build-all
+
+# Individual architecture targets
+zig build build-x86_64-linux
+zig build build-aarch64-linux
+zig build build-x86_64-macos
+zig build build-aarch64-macos
+zig build build-x86_64-windows
+zig build build-aarch64-windows
+```
+
+### Output Structure
+Binaries are placed in architecture-specific directories:
+```
+zig-out/
+├── aarch64-macos/bin/rmp      # Native build on Apple Silicon
+├── x86_64-linux/bin/rmp       # Cross-compiled for x86_64 Linux
+├── aarch64-linux/bin/rmp      # Cross-compiled for ARM64 Linux
+└── ...
+```
+
+**Note:** Cross-compilation requires SQLite libraries for the target platform. Native builds work automatically.
 
 # Clean build artifacts
 zig build clean

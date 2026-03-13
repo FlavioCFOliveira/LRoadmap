@@ -1,0 +1,141 @@
+name: Build Cross-Platform Binaries
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-x86_64-linux
+          path: zig-out/x86_64-linux/bin/rmp
+
+  build-linux-aarch64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-aarch64-linux
+          path: zig-out/aarch64-linux/bin/rmp
+
+  build-macos-x86_64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: brew install sqlite3
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-x86_64-macos
+          path: zig-out/x86_64-macos/bin/rmp
+
+  build-macos-aarch64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: brew install sqlite3
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-aarch64-macos
+          path: zig-out/aarch64-macos/bin/rmp
+
+  build-windows-x86_64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: |
+          choco install sqlite
+          echo "C:\ProgramData\chocolatey\lib\SQLite\tools" >> $env:GITHUB_PATH
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-x86_64-windows
+          path: zig-out/x86_64-windows/bin/rmp.exe
+
+  build-windows-aarch64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0
+      - name: Install SQLite
+        run: |
+          choco install sqlite
+          echo "C:\ProgramData\chocolatey\lib\SQLite\tools" >> $env:GITHUB_PATH
+      - name: Build
+        run: zig build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmp-aarch64-windows
+          path: zig-out/aarch64-windows/bin/rmp.exe
+
+  release:
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-x86_64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: rmp-*
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
