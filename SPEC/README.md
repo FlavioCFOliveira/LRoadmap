@@ -27,7 +27,7 @@ This directory contains the complete technical specification for LRoadmap - a CL
 1. **Performance**: Fast execution, minimal overhead
 2. **Resources**: Efficient usage, only what is necessary
 3. **Security**: Strict validation, protection against invalid data
-4. **Consistency**: Always JSON responses, always UTC dates
+4. **Consistency**: Consistent JSON for queries, always UTC dates
 
 ## Specification Versioning
 

@@ -9,35 +9,32 @@ LRoadmap is a command-line interface (CLI) application for managing technical ro
 ## Key Features
 
 - **Local-First**: All data stored in individual SQLite files
-- **JSON Output**: All responses structured in JSON format
-- **Unix Conventions**: Follows standard CLI patterns
-- **Bulk Operations**: Support for multiple records in single commands
+- **Structured Output**: JSON for data queries; plain text for errors and help
+- **Unix Conventions**: Follows standard CLI patterns (ls, rm, new, etc.)
 - **Complete Audit**: Full history of all operations
 - **Agentic Workflow Support**: Claude Code skill for orchestrated sprint management ([SKILL.md](SKILL.md))
 
 ## Quick Start
 
 ```bash
-# List roadmaps
-rmp roadmap list
-
-# Create a roadmap
+# 1. Create and select a roadmap
 rmp roadmap new project1
+rmp roadmap use project1
 
-# Create a task
-rmp task new -r project1 -d "Implement auth" -a "Create JWT" -e "Login works"
+# 2. Create a task (automatically uses project1)
+rmp task new -d "Implement auth" -a "Create JWT" -e "Login works" --priority 9
 
-# List tasks
-rmp task ls -r project1
+# 3. List tasks
+rmp task ls
 
-# Change task status
-rmp task stat -r project1 1 DOING
+# 4. Create and manage a sprint
+rmp sprint new -d "Sprint 1"
+rmp sprint add 1 1         # Add task 1 to sprint 1
+rmp sprint start 1         # Start sprint 1
 
-# Create sprint
-rmp sprint new -r project1 -d "Sprint 1"
-
-# Add tasks to sprint
-rmp sprint add -r project1 1 1,2,3
+# 5. Track progress
+rmp task stat 1 DOING      # Change status
+rmp sprint stats 1         # See statistics
 ```
 
 ## Technology Stack
@@ -45,8 +42,8 @@ rmp sprint add -r project1 1 1,2,3
 - **Language**: [Zig](https://ziglang.org/) - exclusively
 - **Database**: SQLite (individual `.db` files)
 - **Input**: CLI arguments only (no JSON, no stdin, no config files)
-- **Output**: JSON exclusively
-- **Dates**: ISO 8601 with UTC
+- **Output**: JSON for success responses; plain text for errors and help
+- **Dates**: ISO 8601 with UTC (`2026-03-13T14:30:00.000Z`)
 
 ## Installation
 
@@ -217,10 +214,10 @@ Complete technical specification available in the [`SPEC/`](SPEC/) directory:
 
 ## Design Principles
 
-1. **Performance**: Fast execution with minimal overhead
+1. **Performance**: Fast execution, minimal overhead
 2. **Resources**: Efficient usage, only what is necessary
 3. **Security**: Strict validation, protection against invalid data
-4. **Consistency**: Always JSON responses, always UTC dates
+4. **Consistency**: Consistent JSON for queries, always UTC dates
 
 ## Command Structure
 
@@ -345,26 +342,61 @@ rmp task rm -r myproject 10,11,12
 
 ## Output Format
 
-All responses are JSON:
+LRoadmap follows strict output conventions:
+
+1. **Success Queries**: Returns direct JSON object or array (e.g., `rmp task list`, `rmp sprint stats`).
+2. **Success Creation**: Returns JSON with the new ID (e.g., `{"id": 42}`).
+3. **Success Modifications**: No output on success; completion signaled by exit code `0` (e.g., `rmp task stat`, `rmp roadmap rm`).
+4. **Errors**: Human-readable plain text to **stderr**. Input errors also display command-specific help.
+5. **Help**: Human-readable plain text to **stdout**.
+
+### Success Query Example (JSON)
 
 ```json
-{
-  "id": 1,
-  "priority": 9,
-  "severity": 3,
-  "status": "DOING",
-  "description": "Implement auth",
-  "action": "Create JWT",
-  "expected_result": "Login works",
-  "created_at": "2026-03-12T15:00:00.000Z",
-  "completed_at": null
-}
+[
+  {
+    "id": 1,
+    "priority": 9,
+    "severity": 3,
+    "status": "DOING",
+    "description": "Implement auth",
+    "specialists": "zig-dev,security",
+    "action": "Create JWT",
+    "expected_result": "Login works",
+    "created_at": "2026-03-13T15:00:00.000Z",
+    "completed_at": null
+  }
+]
 ```
 
-Errors:
+### Success Modification (No Output)
+
+```bash
+$ rmp task stat -r project1 1 COMPLETED
+$ echo $?
+0
+```
+
+### Error Example (Plain Text)
 
 ```
-Error: Task(s) with ID(s) [99] not found
+$ rmp task get -r project1 999
+Error: Task with ID 999 not found in roadmap 'project1'
+```
+
+## Audit and History
+
+LRoadmap tracks every change in an audit log:
+
+```bash
+# List all changes
+rmp audit ls -r project1
+
+# See history of a specific task
+rmp audit hist -r project1 -e TASK 1
+
+# See roadmap statistics
+rmp audit stats -r project1
 ```
 
 ## License
@@ -378,4 +410,4 @@ Contributions welcome. Please read [SPEC/ARCHITECTURE.md](SPEC/ARCHITECTURE.md) 
 ---
 
 **Version**: 1.0.0-draft
-**Last Updated**: 2026-03-12
+**Last Updated**: 2026-03-13
