@@ -96,15 +96,24 @@ jobs:
           $sqliteVersion = "3510300"
           $url = "https://sqlite.org/2026/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
-          Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
-          Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
-          Remove-Item -Recurse -Force "sqlite-src"
+          # Extract to temp directory
+          $tempDir = "sqlite-temp"
+          Expand-Archive -Path "sqlite.zip" -DestinationPath $tempDir
+          # Remove existing sqlite3-src if present
+          if (Test-Path "sqlite3-src") { Remove-Item -Recurse -Force "sqlite3-src" }
+          # Move the extracted folder to sqlite3-src
+          Move-Item -Path "$tempDir\sqlite-amalgamation-$sqliteVersion" -Destination "sqlite3-src"
+          # Cleanup
+          Remove-Item -Recurse -Force $tempDir
           Remove-Item "sqlite.zip"
+          # Verify files
+          Get-ChildItem "sqlite3-src"
       - name: Build
         shell: powershell
         run: |
           # Set environment variable for build.zig to detect
           $env:SQLITE_SOURCE = "$PWD\sqlite3-src"
+          Write-Host "SQLITE_SOURCE = $env:SQLITE_SOURCE"
           zig build
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -127,15 +136,24 @@ jobs:
           $sqliteVersion = "3510300"
           $url = "https://sqlite.org/2026/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
-          Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
-          Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
-          Remove-Item -Recurse -Force "sqlite-src"
+          # Extract to temp directory
+          $tempDir = "sqlite-temp"
+          Expand-Archive -Path "sqlite.zip" -DestinationPath $tempDir
+          # Remove existing sqlite3-src if present
+          if (Test-Path "sqlite3-src") { Remove-Item -Recurse -Force "sqlite3-src" }
+          # Move the extracted folder to sqlite3-src
+          Move-Item -Path "$tempDir\sqlite-amalgamation-$sqliteVersion" -Destination "sqlite3-src"
+          # Cleanup
+          Remove-Item -Recurse -Force $tempDir
           Remove-Item "sqlite.zip"
+          # Verify files
+          Get-ChildItem "sqlite3-src"
       - name: Build
         shell: powershell
         run: |
           # Set environment variable for build.zig to detect
           $env:SQLITE_SOURCE = "$PWD\sqlite3-src"
+          Write-Host "SQLITE_SOURCE = $env:SQLITE_SOURCE"
           zig build
       - name: Upload artifact
         uses: actions/upload-artifact@v4
