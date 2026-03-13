@@ -6,6 +6,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LRoadmap is a Local Roadmap Manager CLI for agentic workflows, written in **Zig** exclusively. It manages technical roadmaps, tasks, and sprints through a command-line interface with JSON output.
 
+## Agentic Workflow Support
+
+LRoadmap includes a **Claude Code Skill** (`SKILL.md`) that enables agentic task and sprint management workflows. When working with this codebase in Claude Code, the skill provides:
+
+- **Orchestrated Sprint Management**: Claude acts as a sprint coordinator managing the complete task lifecycle
+- **Structured Task Creation**: Enforces best practices for task definition (description, action, expected result)
+- **Automated State Transitions**: Validates and executes task status changes with audit trail
+- **Progress Monitoring**: Real-time sprint statistics and backlog analysis
+- **Bulk Operations**: Efficient multi-task operations with single commands
+
+### Using the Skill
+
+The skill is automatically available when working in this repository. Key capabilities:
+
+```
+# Activate sprint orchestrator mode
+"Act as sprint orchestrator for roadmap <name>"
+
+# Create structured tasks
+"Create a high-priority task for implementing authentication"
+
+# Manage sprint lifecycle
+"Start sprint 1 and add tasks 1,2,3 to it"
+
+# Monitor progress
+"Show sprint statistics and current progress"
+```
+
+See [SKILL.md](SKILL.md) for complete documentation on agentic workflows and command patterns.
+
 ## Technology Stack
 
 - **Language**: Zig (exclusively)

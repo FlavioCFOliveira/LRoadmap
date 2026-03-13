@@ -13,6 +13,7 @@ LRoadmap is a command-line interface (CLI) application for managing technical ro
 - **Unix Conventions**: Follows standard CLI patterns
 - **Bulk Operations**: Support for multiple records in single commands
 - **Complete Audit**: Full history of all operations
+- **Agentic Workflow Support**: Claude Code skill for orchestrated sprint management ([SKILL.md](SKILL.md))
 
 ## Quick Start
 
@@ -61,6 +62,44 @@ zig build
 zig build install
 ```
 
+## Claude Code Skill
+
+LRoadmap includes a dedicated skill for Claude Code that enables agentic workflows for task and sprint management.
+
+### Features
+
+- **Sprint Orchestration**: Claude acts as a sprint coordinator managing task lifecycles
+- **Structured Task Creation**: Enforces best practices for task definition
+- **Automated State Management**: Handles task transitions with validation
+- **Progress Monitoring**: Real-time sprint statistics and reporting
+- **Bulk Operations**: Efficient multi-task commands
+
+### Quick Start with Skill
+
+```bash
+# In Claude Code, the skill is automatically available
+# Just ask Claude to:
+
+# Create and manage sprints
+"Create a new sprint for the API authentication features"
+"Start sprint 1 and add the backlog tasks to it"
+
+# Manage tasks
+"Create a high-priority task for implementing JWT middleware"
+"Mark tasks 1,2,3 as DOING"
+"Show me the sprint progress"
+
+# Analyze progress
+"Show sprint statistics"
+"List all completed tasks"
+```
+
+See [SKILL.md](SKILL.md) for complete documentation including:
+- Workflow patterns
+- Command reference
+- Usage examples
+- Integration guides
+
 ## Specification
 
 Complete technical specification available in the [`SPEC/`](SPEC/) directory:
@@ -73,6 +112,7 @@ Complete technical specification available in the [`SPEC/`](SPEC/) directory:
 | [SPEC/COMMANDS_REFERENCE.md](SPEC/COMMANDS_REFERENCE.md) | Quick command reference with examples |
 | [SPEC/DATABASE.md](SPEC/DATABASE.md) | SQLite schema and SQL queries |
 | [SPEC/DATA_FORMATS.md](SPEC/DATA_FORMATS.md) | JSON output formats and data types |
+| [SKILL.md](SKILL.md) | Claude Code skill for agentic workflows |
 
 ## Design Principles
 
@@ -150,6 +190,40 @@ rmp sprint stats -r myproject 1
 # 8. Close sprint
 rmp sprint close -r myproject 1
 ```
+
+## Agentic Workflow with Claude Code
+
+LRoadmap includes a Claude Code skill for orchestrated task and sprint management. The skill enables Claude to act as a sprint coordinator, managing complete workflows from backlog to completion.
+
+### Quick Start with Claude
+
+```bash
+# In Claude Code, the skill is automatically loaded
+# You can ask Claude to:
+
+"Create a new sprint for the authentication feature"
+"Show me the current sprint progress"
+"Move task 5 to testing status"
+"Generate a sprint completion report"
+```
+
+### Installation for Agentic Workflows
+
+1. **Install LRoadmap** (see Installation section above)
+
+2. **The skill is automatically available** when working in this repository via `CLAUDE.md`
+
+3. **For detailed skill documentation**, see [SKILL.md](SKILL.md)
+
+### What the Skill Enables
+
+- **Orchestrated Sprint Management**: Complete sprint lifecycle from creation to closure
+- **Structured Task Creation**: Enforces best practices (description, action, expected result)
+- **Automated State Transitions**: Validates and executes status changes with full audit trail
+- **Progress Monitoring**: Real-time statistics and backlog analysis
+- **Bulk Operations**: Efficient multi-task management
+
+See [SKILL.md](SKILL.md) for complete workflow patterns and examples.
 
 ## Bulk Operations
 
