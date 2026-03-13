@@ -20,6 +20,11 @@ fn printStdout(comptime fmt: []const u8, args: anytype) void {
     stdout.print(fmt, args) catch {};
 }
 
+fn printStderr(comptime fmt: []const u8, args: anytype) void {
+    const stderr = std.fs.File.stderr().deprecatedWriter();
+    stderr.print(fmt, args) catch {};
+}
+
 const ExitCode = struct {
     pub const SUCCESS = 0;
     pub const FAILURE = 1;
@@ -53,8 +58,15 @@ fn getExitCodeForError(error_code: []const u8) u8 {
 fn printError(allocator: std.mem.Allocator, code: []const u8, message: []const u8) u8 {
     const err_json = json.errorResponse(allocator, code, message) catch "{\"success\":false,\"error\":{\"code\":\"SYSTEM_ERROR\",\"message\":\"Failed to generate error response\"}}";
     defer if (!std.mem.eql(u8, err_json, "{\"success\":false,\"error\":{\"code\":\"SYSTEM_ERROR\",\"message\":\"Failed to generate error response\"}}")) allocator.free(err_json);
-    printStdout("{s}\n", .{err_json});
+    printStderr("{s}\n", .{err_json});
     return getExitCodeForError(code);
+}
+
+/// Prints error and then prints help for the command to stdout
+fn printErrorWithHelp(allocator: std.mem.Allocator, code: []const u8, message: []const u8, command: []const u8) u8 {
+    const exit_code = printError(allocator, code, message);
+    printCommandHelp(allocator, command);
+    return exit_code;
 }
 
 /// Main entry point for CLI
@@ -149,7 +161,7 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "create") or std.mem.eql(u8, subcmd, "new")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap create <name> [--force]");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -163,7 +175,7 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm") or std.mem.eql(u8, subcmd, "delete")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap remove <name>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -176,7 +188,7 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "use")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp roadmap use <name>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -188,7 +200,9 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         }
         printStdout("{s}\n", .{result});
     } else {
-        const exit_code = printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown roadmap subcommand: {s}", .{subcmd}));
+        const err_msg = try std.fmt.allocPrint(allocator, "Unknown roadmap subcommand: {s}", .{subcmd});
+        defer allocator.free(err_msg);
+        const exit_code = printErrorWithHelp(allocator, "UNKNOWN_SUBCOMMAND", err_msg, "roadmap");
         std.process.exit(exit_code);
     }
 }
@@ -239,7 +253,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task get <ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: task IDs", "task");
             std.process.exit(exit_code);
         }
         if (subargs.len > 1) {
@@ -296,7 +310,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         try handleTaskAdd(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "status") or std.mem.eql(u8, subcmd, "stat")) {
         if (subargs.len < 2) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task status <ids> <status>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or status", "task");
             std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
@@ -345,7 +359,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         }
     } else if (std.mem.eql(u8, subcmd, "prio") or std.mem.eql(u8, subcmd, "priority")) {
         if (subargs.len < 2) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task prio <ids> <priority>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or priority value", "task");
             std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
@@ -399,7 +413,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         }
     } else if (std.mem.eql(u8, subcmd, "sev") or std.mem.eql(u8, subcmd, "severity")) {
         if (subargs.len < 2) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task sev <ids> <severity>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or severity value", "task");
             std.process.exit(exit_code);
         }
         if (subargs.len > 2) {
@@ -455,7 +469,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         try handleTaskEdit(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "delete") or std.mem.eql(u8, subcmd, "rm")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task delete <ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: task IDs", "task");
             std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
@@ -581,7 +595,7 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (description == null or action == null or expected_result == null) {
         const err_json = try json.errorResponse(allocator, "INVALID_INPUT", "Missing required fields. Usage: rmp task add -d <description> -a <action> -e <expected_result> [-p priority] [-s severity] [-sp specialists]");
         defer allocator.free(err_json);
-        printStdout("{s}\n", .{err_json});
+        printStderr("{s}\n", .{err_json});
         std.process.exit(ExitCode.MISUSE);
     }
 
@@ -605,7 +619,7 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn handleTaskEdit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp task edit <id> [options...]");
+        const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: task ID", "task");
         std.process.exit(exit_code);
     }
 
@@ -739,7 +753,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint get <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -755,7 +769,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "tasks")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint tasks <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -772,7 +786,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add <description>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint description", "sprint");
             std.process.exit(exit_code);
         }
         const description = try std.mem.join(allocator, " ", subargs);
@@ -786,7 +800,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "open") or std.mem.eql(u8, subcmd, "start")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint open <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -802,7 +816,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "close")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint close <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -818,7 +832,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "reopen")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint reopen <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -834,7 +848,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "stats")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint stats <id>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -850,7 +864,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "update") or std.mem.eql(u8, subcmd, "upd")) {
         if (subargs.len < 2) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint update <id> <description>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or description", "sprint");
             std.process.exit(exit_code);
         }
         const id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -868,7 +882,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "add-task") or std.mem.eql(u8, subcmd, "add-tasks") or std.mem.eql(u8, subcmd, "add")) {
         if (subargs.len < 2) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint add-task <sprint_id> <task_ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or task IDs", "sprint");
             std.process.exit(exit_code);
         }
         const sprint_id = std.fmt.parseInt(i64, subargs[0], 10) catch {
@@ -912,7 +926,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
     } else if (std.mem.eql(u8, subcmd, "remove-task") or std.mem.eql(u8, subcmd, "remove-tasks") or std.mem.eql(u8, subcmd, "rm-tasks")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove-tasks <sprint_id> <task_ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or task IDs", "sprint");
             std.process.exit(exit_code);
         }
 
@@ -958,7 +972,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
     } else if (std.mem.eql(u8, subcmd, "move-tasks") or std.mem.eql(u8, subcmd, "mv-tasks")) {
         if (subargs.len < 3) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint move-tasks <from_sprint_id> <to_sprint_id> <task_ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: from sprint ID, to sprint ID, and/or task IDs", "sprint");
             std.process.exit(exit_code);
         }
 
@@ -1005,7 +1019,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm")) {
         if (subargs.len < 1) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp sprint remove <ids>");
+            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID(s)", "sprint");
             std.process.exit(exit_code);
         }
         const ids = parseIds(allocator, subargs[0]) catch |err| {
@@ -1058,7 +1072,7 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
     }
 
     if (args.len == 0) {
-        const exit_code = printError(allocator, "INVALID_INPUT", "Usage: rmp audit <subcommand> [options]\nSubcommands: list, history, stats");
+        const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: audit subcommand", "audit");
         std.process.exit(exit_code);
     }
 

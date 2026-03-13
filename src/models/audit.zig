@@ -70,9 +70,13 @@ pub const OperationType = enum {
     SPRINT_CLOSE,
     SPRINT_REOPEN,
     /// Sprint-task operations
-    TASK_ADDED_TO_SPRINT,
-    TASK_REMOVED_FROM_SPRINT,
-    TASK_MOVED_BETWEEN_SPRINTS,
+    SPRINT_ADD_TASK,
+    SPRINT_REMOVE_TASK,
+    SPRINT_MOVE_TASK,
+    /// Sprint query operations
+    SPRINT_GET,
+    SPRINT_STATS,
+    SPRINT_LIST_TASKS,
 
     /// Converts operation type to string
     pub fn toString(self: OperationType) []const u8 {
@@ -89,9 +93,12 @@ pub const OperationType = enum {
             .SPRINT_START => "SPRINT_START",
             .SPRINT_CLOSE => "SPRINT_CLOSE",
             .SPRINT_REOPEN => "SPRINT_REOPEN",
-            .TASK_ADDED_TO_SPRINT => "TASK_ADDED_TO_SPRINT",
-            .TASK_REMOVED_FROM_SPRINT => "TASK_REMOVED_FROM_SPRINT",
-            .TASK_MOVED_BETWEEN_SPRINTS => "TASK_MOVED_BETWEEN_SPRINTS",
+            .SPRINT_ADD_TASK => "SPRINT_ADD_TASK",
+            .SPRINT_REMOVE_TASK => "SPRINT_REMOVE_TASK",
+            .SPRINT_MOVE_TASK => "SPRINT_MOVE_TASK",
+            .SPRINT_GET => "SPRINT_GET",
+            .SPRINT_STATS => "SPRINT_STATS",
+            .SPRINT_LIST_TASKS => "SPRINT_LIST_TASKS",
         };
     }
 
@@ -109,9 +116,12 @@ pub const OperationType = enum {
         if (std.mem.eql(u8, str, "SPRINT_START")) return .SPRINT_START;
         if (std.mem.eql(u8, str, "SPRINT_CLOSE")) return .SPRINT_CLOSE;
         if (std.mem.eql(u8, str, "SPRINT_REOPEN")) return .SPRINT_REOPEN;
-        if (std.mem.eql(u8, str, "TASK_ADDED_TO_SPRINT")) return .TASK_ADDED_TO_SPRINT;
-        if (std.mem.eql(u8, str, "TASK_REMOVED_FROM_SPRINT")) return .TASK_REMOVED_FROM_SPRINT;
-        if (std.mem.eql(u8, str, "TASK_MOVED_BETWEEN_SPRINTS")) return .TASK_MOVED_BETWEEN_SPRINTS;
+        if (std.mem.eql(u8, str, "SPRINT_ADD_TASK")) return .SPRINT_ADD_TASK;
+        if (std.mem.eql(u8, str, "SPRINT_REMOVE_TASK")) return .SPRINT_REMOVE_TASK;
+        if (std.mem.eql(u8, str, "SPRINT_MOVE_TASK")) return .SPRINT_MOVE_TASK;
+        if (std.mem.eql(u8, str, "SPRINT_GET")) return .SPRINT_GET;
+        if (std.mem.eql(u8, str, "SPRINT_STATS")) return .SPRINT_STATS;
+        if (std.mem.eql(u8, str, "SPRINT_LIST_TASKS")) return .SPRINT_LIST_TASKS;
         return error.InvalidOperationType;
     }
 };

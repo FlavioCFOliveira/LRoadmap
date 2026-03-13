@@ -432,7 +432,7 @@ pub fn getTasksBySprint(allocator: std.mem.Allocator, conn: Connection, sprint_i
         \\FROM tasks t
         \\JOIN sprint_tasks st ON t.id = st.task_id
         \\WHERE st.sprint_id = ?
-        \\ORDER BY t.priority DESC, t.created_at ASC
+        \\ORDER BY t.priority DESC, t.severity DESC
     ;
 
     var stmt: ?*c.sqlite3_stmt = null;
@@ -463,7 +463,7 @@ pub fn getTasksBySprintFiltered(allocator: std.mem.Allocator, conn: Connection, 
         \\JOIN sprint_tasks st ON t.id = st.task_id
         \\WHERE st.sprint_id = ?
     ;
-    const order_clause = " ORDER BY t.priority DESC, t.created_at ASC";
+    const order_clause = " ORDER BY t.priority DESC, t.severity DESC";
 
     var full_sql: []const u8 = undefined;
     if (status_filter) |s| {
@@ -635,18 +635,26 @@ pub fn moveTaskBetweenSprints(conn: Connection, task_id: i64, new_sprint_id: i64
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
 }
 
-pub fn getSprintStats(conn: Connection, sprint_id: i64) !@import("../models/sprint.zig").SprintStats {
+pub fn getSprintStats(allocator: std.mem.Allocator, conn: Connection, sprint_id: i64) !@import("../models/sprint.zig").SprintStats {
     const sql =
         \\SELECT
-        \\  COUNT(*),
-        \\  SUM(CASE WHEN status = 'BACKLOG' THEN 1 ELSE 0 END),
-        \\  SUM(CASE WHEN status = 'SPRINT' THEN 1 ELSE 0 END),
-        \\  SUM(CASE WHEN status = 'DOING' THEN 1 ELSE 0 END),
-        \\  SUM(CASE WHEN status = 'TESTING' THEN 1 ELSE 0 END),
-        \\  SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END)
-        \\FROM tasks t
-        \\JOIN sprint_tasks st ON t.id = st.task_id
-        \\WHERE st.sprint_id = ?
+        \\  s.id,
+        \\  s.description,
+        \\  s.status,
+        \\  s.created_at,
+        \\  s.started_at,
+        \\  s.closed_at,
+        \\  COUNT(t.id),
+        \\  SUM(CASE WHEN t.status = 'BACKLOG' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN t.status = 'SPRINT' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN t.status = 'DOING' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN t.status = 'TESTING' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN t.status = 'COMPLETED' THEN 1 ELSE 0 END)
+        \\FROM sprints s
+        \\LEFT JOIN sprint_tasks st ON s.id = st.sprint_id
+        \\LEFT JOIN tasks t ON st.task_id = t.id
+        \\WHERE s.id = ?
+        \\GROUP BY s.id, s.description, s.status, s.created_at, s.started_at, s.closed_at
     ;
 
     var stmt: ?*c.sqlite3_stmt = null;
@@ -658,16 +666,52 @@ pub fn getSprintStats(conn: Connection, sprint_id: i64) !@import("../models/spri
 
     if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.StepFailed;
 
-    const total = c.sqlite3_column_int(stmt, 0);
-    const backlog = c.sqlite3_column_int(stmt, 1);
-    const sprint = c.sqlite3_column_int(stmt, 2);
-    const doing = c.sqlite3_column_int(stmt, 3);
-    const testing = c.sqlite3_column_int(stmt, 4);
-    const completed = c.sqlite3_column_int(stmt, 5);
+    const id = c.sqlite3_column_int64(stmt, 0);
+    const desc_ptr = c.sqlite3_column_text(stmt, 1);
+    const desc_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+    const status_str = c.sqlite3_column_text(stmt, 2);
+    const created_ptr = c.sqlite3_column_text(stmt, 3);
+    const created_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 3));
+
+    const description = try allocator.dupe(u8, desc_ptr[0..desc_len]);
+    errdefer allocator.free(description);
+
+    const status_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 2));
+    const status = SprintStatus.fromString(status_str[0..status_len]) catch .PENDING;
+
+    const created_at = try allocator.dupe(u8, created_ptr[0..created_len]);
+    errdefer allocator.free(created_at);
+
+    const started_at: ?[]const u8 = if (c.sqlite3_column_type(stmt, 4) == c.SQLITE_NULL) null else blk: {
+        const ptr = c.sqlite3_column_text(stmt, 4);
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 4));
+        break :blk try allocator.dupe(u8, ptr[0..len]);
+    };
+    errdefer if (started_at) |sa| allocator.free(sa);
+
+    const closed_at: ?[]const u8 = if (c.sqlite3_column_type(stmt, 5) == c.SQLITE_NULL) null else blk: {
+        const ptr = c.sqlite3_column_text(stmt, 5);
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 5));
+        break :blk try allocator.dupe(u8, ptr[0..len]);
+    };
+    errdefer if (closed_at) |ca| allocator.free(ca);
+
+    const total = c.sqlite3_column_int(stmt, 6);
+    const backlog = c.sqlite3_column_int(stmt, 7);
+    const sprint = c.sqlite3_column_int(stmt, 8);
+    const doing = c.sqlite3_column_int(stmt, 9);
+    const testing = c.sqlite3_column_int(stmt, 10);
+    const completed = c.sqlite3_column_int(stmt, 11);
 
     const completion_percentage: i32 = if (total > 0) @intCast(@divTrunc(completed * 100, total)) else 0;
 
     return .{
+        .id = id,
+        .description = description,
+        .status = status,
+        .created_at = created_at,
+        .started_at = started_at,
+        .closed_at = closed_at,
         .total_tasks = total,
         .by_status = .{
             .backlog = backlog,

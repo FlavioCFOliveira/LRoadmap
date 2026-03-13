@@ -1,25 +1,25 @@
 const std = @import("std");
 
 /// Creates a success response JSON string.
-/// Returns the data directly without wrapper object.
+/// Returns data wrapped in {"success": true, "data": {...}} format.
 /// Caller owns the returned memory.
 pub fn success(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
-    // Return data directly without wrapper
-    return allocator.dupe(u8, data);
+    // Return data wrapped in success envelope
+    return std.fmt.allocPrint(allocator, "{{\"success\":true,\"data\":{s}}}", .{data});
 }
 
 /// Creates an error response JSON string.
-/// Returns the error object directly without wrapper.
+/// Returns error wrapped in {"success": false, "error": {...}} format.
 /// Caller owns the returned memory.
 pub fn errorResponse(allocator: std.mem.Allocator, code: []const u8, message: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{{\"code\":\"{s}\",\"message\":\"{s}\"}}", .{ code, message });
+    return std.fmt.allocPrint(allocator, "{{\"success\":false,\"error\":{{\"code\":\"{s}\",\"message\":\"{s}\"}}}}", .{ code, message });
 }
 
 /// Creates an error response with details JSON string.
-/// Returns the error object directly without wrapper.
+/// Returns error wrapped in {"success": false, "error": {...}} format.
 /// Caller owns the returned memory.
 pub fn errorResponseWithDetails(allocator: std.mem.Allocator, code: []const u8, message: []const u8, details: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{{\"code\":\"{s}\",\"message\":\"{s}\",\"details\":{s}}}", .{ code, message, details });
+    return std.fmt.allocPrint(allocator, "{{\"success\":false,\"error\":{{\"code\":\"{s}\",\"message\":\"{s}\",\"details\":{s}}}}}", .{ code, message, details });
 }
 
 /// Common error codes
@@ -97,26 +97,29 @@ pub fn formatNumber(value: i64) []const u8 {
 
 // ============== TESTS ==============
 
-test "success response returns data directly" {
+test "success response returns data wrapped in success:true" {
     const allocator = std.testing.allocator;
 
     const data = "{\"name\":\"project1\"}";
     const result = try success(allocator, data);
     defer allocator.free(result);
 
-    // Should return data directly without wrapper
-    try std.testing.expectEqualStrings(data, result);
+    // Should return data wrapped in success:true envelope
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":true"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"data\":{"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"name\":\"project1\""));
 }
 
-test "error response returns error object directly" {
+test "error response returns error wrapped in success:false" {
     const allocator = std.testing.allocator;
 
     const result = try errorResponse(allocator, "ROADMAP_NOT_FOUND", "Roadmap not found");
     defer allocator.free(result);
 
-    // Should NOT contain success:false wrapper
-    try std.testing.expect(!std.mem.containsAtLeast(u8, result, 1, "\"success\":false"));
-    // Should contain error fields directly
+    // Should contain success:false wrapper
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":false"));
+    // Should contain error fields inside error object
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"error\":{"));
     try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"code\":\"ROADMAP_NOT_FOUND\""));
     try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"message\":\"Roadmap not found\""));
 }
@@ -127,7 +130,9 @@ test "error response with details" {
     const result = try errorResponseWithDetails(allocator, "INVALID_INPUT", "Missing field", "{\"field\":\"name\"}");
     defer allocator.free(result);
 
-    // Should contain error fields and details directly
+    // Should contain success:false wrapper with error object
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":false"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"error\":{"));
     try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"code\":\"INVALID_INPUT\""));
     try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"details\":{\"field\":\"name\"}"));
 }

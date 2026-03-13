@@ -11,7 +11,7 @@ LRoadmap is a Local Roadmap Manager CLI for agentic workflows, written in **Zig*
 - **Language**: Zig (exclusively)
 - **Database**: SQLite (individual `.db` files per roadmap)
 - **Input**: CLI arguments only (no JSON, no stdin, no config files)
-- **Output**: JSON exclusively
+- **Output**: JSON for success, plain text for errors (typical CLI behavior)
 - **Dates**: ISO 8601 with UTC (`2026-03-12T14:30:00.000Z`)
 
 ## Build Commands
@@ -120,22 +120,43 @@ rmp task prio -r project1 5,6,7 9
 ## Key Design Principles
 
 1. **Local-First**: All data in individual SQLite files (`~/.roadmaps/*.db`)
-2. **JSON Output**: All responses structured in JSON (successes AND errors)
+2. **JSON Output**: Success responses in JSON; errors in plain text (typical CLI behavior)
 3. **No Interactive Input**: CLI arguments only, no stdin, no config files
 4. **Unix Conventions**: Standard CLI patterns (`ls`, `rm`, `new`, etc.)
 5. **Complete Audit**: Full history logged in `audit` table
 
 ## Error Response Format
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable description",
-    "details": { /* optional */ }
-  }
-}
+Errors follow typical CLI behavior (NOT JSON):
+
+### Default Behavior
+- Error messages are written explicitly to **stderr**
+- Plain text format (human-readable)
+- Uses standard Unix exit codes
+
+### Input-Related Errors
+When errors are related to inputs, the help for that command is displayed after the error:
+
+**Input errors include:**
+- Missing required parameters
+- Invalid argument types or formats
+- Unknown commands or subcommands
+- Invalid flag combinations
+- Missing required flags
+
+**Example - General error:**
+```
+$ rmp task get -r project1 999
+Error: Task with ID 999 not found in roadmap 'project1'
+```
+
+**Example - Input error (shows help):**
+```
+$ rmp task create -r project1
+Error: Missing required parameters: --description, --action, --expected-result
+
+Usage: rmp task create [OPTIONS]
+...
 ```
 
 Common error codes: `INVALID_INPUT`, `ROADMAP_NOT_FOUND`, `ROADMAP_EXISTS`, `TASK_NOT_FOUND`, `SPRINT_NOT_FOUND`, `INVALID_STATUS`, `DB_ERROR`

@@ -131,9 +131,6 @@ pub fn createRoadmap(allocator: std.mem.Allocator, name: []const u8, force: bool
     // Log operation to audit table
     queries.logOperation(conn, "ROADMAP_CREATE", "roadmap", 0, now) catch {};
 
-    // Log operation
-    queries.logOperation(conn, "ROADMAP_CREATE", "roadmap", 0, now) catch {};
-
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"name\":\"{s}\",\"path\":\"~/.roadmaps/{s}.db\",\"created_at\":\"{s}\"}}", .{ name, name, now });
     defer allocator.free(response);

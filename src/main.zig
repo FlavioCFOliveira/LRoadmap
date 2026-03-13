@@ -39,8 +39,8 @@ pub fn main() !void {
         const err_json = json.errorResponse(allocator, err_name, err_msg) catch "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}";
         defer if (!std.mem.eql(u8, err_json, "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}")) allocator.free(err_json);
 
-        const stdout = std.fs.File.stdout().deprecatedWriter();
-        stdout.print("{s}\n", .{err_json}) catch {};
+        const stderr = std.fs.File.stderr().deprecatedWriter();
+        stderr.print("{s}\n", .{err_json}) catch {};
         std.process.exit(1);
     };
 }

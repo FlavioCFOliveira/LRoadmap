@@ -12,6 +12,54 @@
 rmp [command] [subcommand] [arguments] [options]
 ```
 
+## Error Handling
+
+Errors follow typical CLI conventions (NOT JSON format):
+
+### Default Behavior
+- Error messages are written explicitly to **stderr**
+- Plain text format (human-readable)
+- Uses standard Unix exit codes
+
+### Input-Related Errors
+When errors are related to inputs, the help for that command is displayed after the error:
+
+**Input errors include:**
+- Missing required parameters
+- Invalid argument types or formats
+- Unknown commands or subcommands
+- Invalid flag combinations
+- Missing required flags
+
+**Example - General error (not input-related):**
+```
+$ rmp task get -r project1 999
+Error: Task with ID 999 not found in roadmap 'project1'
+```
+
+**Example - Input error (shows help):**
+```
+$ rmp task create -r project1
+Error: Missing required parameters: --description, --action, --expected-result
+
+Usage: rmp task create [OPTIONS]
+
+Creates a new task in the roadmap
+
+Required:
+  -d, --description <text>    Task description
+  -a, --action <text>         Technical action to execute
+  -e, --expected-result <text>  Expected result
+
+Optional:
+  -r, --roadmap <name>        Roadmap name
+  -p, --priority <0-9>        Priority (default: 0)
+  --severity <0-9>            Severity (default: 0)
+
+Examples:
+  rmp task create -r project1 -d "Fix bug" -a "Patch module" -e "Tests pass"
+```
+
 ## Global Commands
 
 ### Help
@@ -89,15 +137,9 @@ rmp roadmap create <name> --force
 }
 ```
 
-**JSON Output (error):**
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ROADMAP_EXISTS",
-    "message": "Roadmap 'project1' already exists"
-  }
-}
+**Error Output:**
+```
+Error: Roadmap 'project1' already exists at ~/.roadmaps/project1.db
 ```
 
 ### Remove Roadmap

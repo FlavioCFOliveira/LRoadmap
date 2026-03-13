@@ -4,13 +4,17 @@
 
 ### Output (Responses)
 
-**All application responses are in JSON, without exceptions.**
+**Success responses are in JSON.**
 
 Including:
 - Successes
-- Errors
 - Listings
 - Help commands (structured)
+
+**Error responses follow typical CLI behavior (NOT JSON):**
+- Errors are written as explicit human-readable messages to stderr
+- Input-related errors (missing parameters, wrong types, unknown commands) additionally show the command's help
+- Uses standard Unix exit codes for script integration
 
 ### Input
 
@@ -46,14 +50,38 @@ Success responses are the direct result object, without any wrapper:
 
 ### Error Response
 
-Error responses are the direct error object, without any wrapper:
+Error responses follow typical CLI conventions (NOT JSON):
 
-```json
-{
-  "code": "ERROR_CODE",
-  "message": "Human-readable error description",
-  "details": { /* optional, additional info */ }
-}
+**Behavior:**
+1. **By default**: Write the error message explicitly to stderr
+2. **Input-related errors**: Show error message followed by the command's help
+
+**Input-related errors include:**
+- Missing required parameters
+- Invalid argument types or formats
+- Unknown commands or subcommands
+- Invalid flag combinations
+- Missing required flags
+
+**Example - Database error (not input-related):**
+```
+Error: Database connection failed: unable to open database file
+```
+
+**Example - Missing parameter (input-related - shows help after error):**
+```
+Error: Missing required argument: --description
+
+Usage: rmp task create --roadmap <name> --description <desc> --action <action> --expected-result <result>
+
+Options:
+  -r, --roadmap <name>      Roadmap name (required)
+  -d, --description <text>  Task description (required)
+  -a, --action <text>       Technical action (required)
+  -e, --expected-result <text>  Expected result (required)
+  -p, --priority <n>        Priority 0-9 (default: 0)
+  --severity <n>            Severity 0-9 (default: 0)
+  -h, --help                Show this help message
 ```
 
 ### Common Error Codes
@@ -78,7 +106,9 @@ Error responses are the direct error object, without any wrapper:
 
 ## Exit Codes
 
-While all output is JSON, LRoadmap returns standard Unix exit codes for integration with shell scripts and CI/CD pipelines.
+LRoadmap returns standard Unix exit codes for integration with shell scripts and CI/CD pipelines.
+
+**Note:** Success output is JSON, but error output is plain text written to stderr.
 
 ### Exit Code Reference
 
@@ -563,51 +593,20 @@ Operation log for tasks and sprints.
 
 ### Error - Roadmap Exists
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ROADMAP_EXISTS",
-    "message": "Roadmap 'project1' already exists at ~/.roadmaps/project1.db",
-    "details": {
-      "roadmap_name": "project1",
-      "existing_path": "~/.roadmaps/project1.db"
-    }
-  }
-}
+```
+Error: Roadmap 'project1' already exists at ~/.roadmaps/project1.db
 ```
 
 ### Error - Task Not Found
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TASK_NOT_FOUND",
-    "message": "Task(s) with ID(s) [99, 100] not found in roadmap 'project1'",
-    "details": {
-      "roadmap": "project1",
-      "missing_ids": [99, 100]
-    }
-  }
-}
+```
+Error: Task(s) with ID(s) [99, 100] not found in roadmap 'project1'
 ```
 
 ### Error - Audit Entity Not Found
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "AUDIT_ENTITY_NOT_FOUND",
-    "message": "No audit entries found for TASK with ID 999 in roadmap 'project1'",
-    "details": {
-      "roadmap": "project1",
-      "entity_type": "TASK",
-      "entity_id": 999
-    }
-  }
-}
+```
+Error: No audit entries found for TASK with ID 999 in roadmap 'project1'
 ```
 
 ### Bulk Update

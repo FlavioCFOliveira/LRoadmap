@@ -147,6 +147,12 @@ pub const Sprint = struct {
 
 /// Sprint statistics
 pub const SprintStats = struct {
+    id: i64,
+    description: []const u8,
+    status: SprintStatus,
+    created_at: []const u8,
+    started_at: ?[]const u8,
+    closed_at: ?[]const u8,
     total_tasks: i32,
     by_status: struct {
         backlog: i32,
@@ -156,6 +162,13 @@ pub const SprintStats = struct {
         completed: i32,
     },
     completion_percentage: i32,
+
+    pub fn deinit(self: *SprintStats, allocator: std.mem.Allocator) void {
+        allocator.free(self.description);
+        allocator.free(self.created_at);
+        if (self.started_at) |sa| allocator.free(sa);
+        if (self.closed_at) |ca| allocator.free(ca);
+    }
 };
 
 // ============== TESTS ==============

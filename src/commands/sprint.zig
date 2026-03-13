@@ -474,13 +474,32 @@ pub fn getSprintStats(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    const stats = try queries.getSprintStats(conn, sprint_id);
+    var stats = try queries.getSprintStats(allocator, conn, sprint_id);
+    defer stats.deinit(allocator);
 
-    // Convert stats to JSON manually since SprintStats doesn't have toJson
+    // Format dates for JSON
+    const started_at_json = if (stats.started_at) |sa|
+        try std.fmt.allocPrint(allocator, "\"{s}\"", .{sa})
+    else
+        try allocator.dupe(u8, "null");
+    defer allocator.free(started_at_json);
+
+    const closed_at_json = if (stats.closed_at) |ca|
+        try std.fmt.allocPrint(allocator, "\"{s}\"", .{ca})
+    else
+        try allocator.dupe(u8, "null");
+    defer allocator.free(closed_at_json);
+
+    // Convert stats to JSON
     const response = try std.fmt.allocPrint(allocator,
-        \\{{"id":{d},"total_tasks":{d},"completion_percentage":{d},"by_status":{{"BACKLOG":{d},"SPRINT":{d},"DOING":{d},"TESTING":{d},"COMPLETED":{d}}}}}
+        \\{{"id":{d},"description":"{s}","status":"{s}","created_at":"{s}","started_at":{s},"closed_at":{s},"total_tasks":{d},"completion_percentage":{d},"by_status":{{"BACKLOG":{d},"SPRINT":{d},"DOING":{d},"TESTING":{d},"COMPLETED":{d}}}}}
     , .{
-        sprint_id,
+        stats.id,
+        stats.description,
+        stats.status.toString(),
+        stats.created_at,
+        started_at_json,
+        closed_at_json,
         stats.total_tasks,
         stats.completion_percentage,
         stats.by_status.backlog,
