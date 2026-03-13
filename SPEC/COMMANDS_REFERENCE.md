@@ -242,6 +242,52 @@ rmp sprint rm -r <name> 1
 
 ---
 
+## Audit Log Management
+
+### List audit entries
+```bash
+# All entries (most recent first)
+rmp audit list --roadmap <name>
+rmp audit ls -r <name>
+
+# With filters
+rmp audit list -r <name> --operation TASK_STATUS_CHANGE
+rmp audit list -r <name> -o SPRINT_START
+rmp audit list -r <name> --entity-type TASK
+rmp audit list -r <name> -e SPRINT
+rmp audit list -r <name> --entity-id 42
+rmp audit list -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit list -r <name> --until 2026-03-12T23:59:59.000Z
+
+# Combined filters
+rmp audit list -r <name> -e TASK -o TASK_STATUS_CHANGE -l 50
+rmp audit list -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-10T00:00:00.000Z -l 100
+```
+
+### Get entity history
+```bash
+# Task history
+rmp audit history --roadmap <name> --entity-type TASK <id>
+rmp audit hist -r <name> -e TASK 42
+
+# Sprint history
+rmp audit history -r <name> --entity-type SPRINT <id>
+rmp audit hist -r <name> -e SPRINT 1
+```
+
+### Audit statistics
+```bash
+# All time statistics
+rmp audit stats --roadmap <name>
+rmp audit stats -r <name>
+
+# Period statistics
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23:59:59.000Z
+```
+
+---
+
 ## Syntax Patterns
 
 ### Multiple IDs (bulk)
@@ -257,6 +303,14 @@ rmp sprint rm -r <name> 1
 - `-a, --action <text>` - technical action
 - `-e, --expected-result <text>` - expected result
 
+### Audit flags
+- `-o, --operation <type>` - filter by operation type
+- `--entity-type <type>` - filter by entity type (TASK, SPRINT)
+- `--entity-id <id>` - filter by entity ID
+- `--since <date>` - include entries from this date (ISO 8601)
+- `--until <date>` - include entries until this date (ISO 8601)
+- `--offset <n>` - pagination offset
+
 ### Unix Conventions
 | Command | Meaning | Usage |
 |---------|---------|-------|
@@ -267,6 +321,7 @@ rmp sprint rm -r <name> 1
 | `stat` | status | task stat |
 | `prio` | priority | task prio |
 | `sev` | severity | task sev |
+| `hist` | history | audit hist |
 | `add` | add | sprint add |
 | `rm-tasks` | remove tasks | sprint rm-tasks |
 | `mv-tasks` | move tasks | sprint mv-tasks |

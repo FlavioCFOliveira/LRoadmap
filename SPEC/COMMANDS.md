@@ -377,7 +377,56 @@ rmp sprint tasks -r <name> 1 --status DOING
 rmp sprint tasks -r <name> 1 -s COMPLETED
 ```
 
-**JSON Output:** Task list (same format as `task list`).
+**Description:** Returns all tasks belonging to a specific sprint, automatically ordered by **priority (descending)** and **severity (descending)**.
+
+**JSON Output:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "sprint_id": 1,
+    "count": 5,
+    "tasks": [
+      {
+        "id": 10,
+        "priority": 9,
+        "severity": 8,
+        "status": "DOING",
+        "description": "Critical security fix",
+        "action": "Patch vulnerability",
+        "expected_result": "System secure",
+        "created_at": "2026-03-12T10:00:00.000Z",
+        "completed_at": null
+      },
+      {
+        "id": 5,
+        "priority": 9,
+        "severity": 5,
+        "status": "SPRINT",
+        "description": "Feature A",
+        "action": "Implement core logic",
+        "expected_result": "Tests pass",
+        "created_at": "2026-03-12T09:00:00.000Z",
+        "completed_at": null
+      },
+      {
+        "id": 3,
+        "priority": 7,
+        "severity": 9,
+        "status": "DOING",
+        "description": "Database optimization",
+        "action": "Add indexes",
+        "expected_result": "Queries < 100ms",
+        "created_at": "2026-03-11T14:00:00.000Z",
+        "completed_at": null
+      }
+    ]
+  }
+}
+```
+
+**Ordering:** Tasks are sorted by `priority DESC`, then `severity DESC` (highest urgency/impact first).
 
 ### Add Tasks to Sprint
 
@@ -477,6 +526,202 @@ rmp sprint remove --roadmap <name> <id>
 
 ---
 
+## Audit Log Management
+
+Command: `rmp audit`
+
+### List Audit Log
+
+```bash
+# List all audit entries (most recent first)
+rmp audit list --roadmap <name>
+rmp audit ls -r <name>
+
+# Filter by operation type
+rmp audit list -r <name> --operation TASK_STATUS_CHANGE
+rmp audit ls -r <name> -o SPRINT_START
+
+# Filter by entity type
+rmp audit list -r <name> --entity-type TASK
+rmp audit ls -r <name> -e SPRINT
+
+# Filter by entity ID
+rmp audit list -r <name> --entity-id 42
+rmp audit ls -r <name> --entity-id 1
+
+# Filter by date range (ISO 8601)
+rmp audit list -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit list -r <name> --until 2026-03-12T23:59:59.000Z
+rmp audit list -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-10T00:00:00.000Z
+
+# Combined filters
+rmp audit list -r <name> --entity-type TASK --operation TASK_STATUS_CHANGE --limit 50
+```
+
+**Options:**
+- `-r, --roadmap <name>`: Roadmap (required)
+- `-o, --operation <type>`: Filter by operation type
+- `-e, --entity-type <type>`: Filter by entity type (TASK, SPRINT)
+- `--entity-id <id>`: Filter by specific entity ID
+- `--since <date>`: Include entries from this date (ISO 8601)
+- `--until <date>`: Include entries until this date (ISO 8601)
+- `-l, --limit <n>`: Limit results (default: 100, max: 1000)
+- `--offset <n>`: Offset for pagination (default: 0)
+
+**JSON Output:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "count": 3,
+    "total": 150,
+    "filters": {
+      "operation": null,
+      "entity_type": null,
+      "entity_id": null,
+      "since": null,
+      "until": null
+    },
+    "entries": [
+      {
+        "id": 152,
+        "operation": "TASK_STATUS_CHANGE",
+        "entity_type": "TASK",
+        "entity_id": 42,
+        "performed_at": "2026-03-13T10:30:00.000Z"
+      },
+      {
+        "id": 151,
+        "operation": "SPRINT_START",
+        "entity_type": "SPRINT",
+        "entity_id": 1,
+        "performed_at": "2026-03-13T09:00:00.000Z"
+      },
+      {
+        "id": 150,
+        "operation": "TASK_CREATE",
+        "entity_type": "TASK",
+        "entity_id": 42,
+        "performed_at": "2026-03-13T08:45:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+### Get Entity History
+
+```bash
+# Get complete history of a specific task
+rmp audit history --roadmap <name> --entity-type TASK <id>
+rmp audit hist -r <name> -e TASK 42
+
+# Get complete history of a specific sprint
+rmp audit history -r <name> --entity-type SPRINT <id>
+rmp audit hist -r <name> -e SPRINT 1
+```
+
+**Arguments:**
+- `id`: Entity ID (required)
+
+**Options:**
+- `-r, --roadmap <name>`: Roadmap (required)
+- `-e, --entity-type <type>`: Entity type (TASK, SPRINT) - required
+
+**JSON Output:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "entity_type": "TASK",
+    "entity_id": 42,
+    "count": 5,
+    "entries": [
+      {
+        "id": 152,
+        "operation": "TASK_STATUS_CHANGE",
+        "performed_at": "2026-03-13T10:30:00.000Z"
+      },
+      {
+        "id": 148,
+        "operation": "TASK_PRIORITY_CHANGE",
+        "performed_at": "2026-03-12T16:00:00.000Z"
+      },
+      {
+        "id": 145,
+        "operation": "TASK_SEVERITY_CHANGE",
+        "performed_at": "2026-03-12T14:30:00.000Z"
+      },
+      {
+        "id": 143,
+        "operation": "SPRINT_ADD_TASK",
+        "performed_at": "2026-03-12T11:00:00.000Z"
+      },
+      {
+        "id": 150,
+        "operation": "TASK_CREATE",
+        "performed_at": "2026-03-13T08:45:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+### Audit Statistics
+
+```bash
+# Get audit statistics for a roadmap
+rmp audit stats --roadmap <name>
+rmp audit stats -r <name>
+
+# Statistics for specific period
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23:59:59.000Z
+```
+
+**Options:**
+- `-r, --roadmap <name>`: Roadmap (required)
+- `--since <date>`: Start date for period
+- `--until <date>`: End date for period
+
+**JSON Output:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "period": {
+      "since": "2026-03-01T00:00:00.000Z",
+      "until": "2026-03-13T23:59:59.000Z"
+    },
+    "total_entries": 150,
+    "by_operation": {
+      "TASK_CREATE": 25,
+      "TASK_STATUS_CHANGE": 45,
+      "TASK_PRIORITY_CHANGE": 12,
+      "TASK_SEVERITY_CHANGE": 8,
+      "TASK_DELETE": 3,
+      "SPRINT_CREATE": 5,
+      "SPRINT_START": 4,
+      "SPRINT_CLOSE": 3,
+      "SPRINT_ADD_TASK": 30,
+      "SPRINT_REMOVE_TASK": 15,
+      "SPRINT_REOPEN": 1
+    },
+    "by_entity_type": {
+      "TASK": 93,
+      "SPRINT": 57
+    },
+    "first_entry": "2026-03-01T09:00:00.000Z",
+    "last_entry": "2026-03-13T18:30:00.000Z"
+  }
+}
+```
+
+---
+
 ## Command Summary
 
 | Command | Alias | Description |
@@ -510,6 +755,10 @@ rmp sprint remove --roadmap <name> <id>
 | `rmp sprint update <id>` | `rmp sprint upd` | Update sprint |
 | `rmp sprint stats <id>` | `rmp sprint stats` | Sprint statistics |
 | `rmp sprint remove <id>` | `rmp sprint rm` | Remove sprint (Unix: rm) |
+| **Audit** | | |
+| `rmp audit list` | `rmp audit ls` | List audit log |
+| `rmp audit history <id>` | `rmp audit hist` | Entity history |
+| `rmp audit stats` | `rmp audit stats` | Audit statistics |
 
 ### Applied Unix/Linux Conventions
 
@@ -523,12 +772,15 @@ rmp sprint remove --roadmap <name> <id>
 | `stat` | status | **Status changes** |
 | `prio` | priority | Change priority |
 | `sev` | severity | Change severity |
+| `hist` | history | Entity history |
 | `use` | select | Specific context |
 
 **Entity aliases:**
 - `road` - roadmap (avoids `rm` conflict)
 - `task` - task (full word, clear)
 - `sprint` - sprint (full word, clear)
+- `audit` - audit log (full word, clear)
+- `aud` - audit (optional shorter form)
 
 **Unix-compliant examples:**
 ```bash

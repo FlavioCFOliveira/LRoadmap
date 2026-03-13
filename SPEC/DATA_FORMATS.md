@@ -65,6 +65,9 @@ Including:
 | `SPRINT_NOT_FOUND` | Specified sprint does not exist |
 | `INVALID_STATUS` | Invalid status for operation |
 | `INVALID_PRIORITY` | Priority outside 0-9 range |
+| `INVALID_DATE_FORMAT` | Date not in ISO 8601 format |
+| `INVALID_ENTITY_TYPE` | Entity type not TASK or SPRINT |
+| `INVALID_OPERATION` | Invalid operation type for filter |
 | `DB_ERROR` | Internal SQLite error |
 | `SYSTEM_ERROR` | System error (permissions, I/O) |
 
@@ -201,6 +204,65 @@ Represents association between sprint and task.
 | task_id | number | Task ID |
 | added_at | string | ISO 8601 UTC - when added to sprint |
 
+### Sprint Tasks List Response
+
+Response from `rmp sprint tasks` command. Tasks are ordered by **priority DESC, severity DESC** (highest urgency/impact first).
+
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "sprint_id": 1,
+    "count": 3,
+    "tasks": [
+      {
+        "id": 10,
+        "priority": 9,
+        "severity": 8,
+        "status": "DOING",
+        "description": "Critical security fix",
+        "specialists": "security-expert",
+        "action": "Patch vulnerability",
+        "expected_result": "System secure",
+        "created_at": "2026-03-12T10:00:00.000Z",
+        "completed_at": null
+      },
+      {
+        "id": 5,
+        "priority": 9,
+        "severity": 5,
+        "status": "SPRINT",
+        "description": "Feature A",
+        "specialists": null,
+        "action": "Implement core logic",
+        "expected_result": "Tests pass",
+        "created_at": "2026-03-12T09:00:00.000Z",
+        "completed_at": null
+      },
+      {
+        "id": 3,
+        "priority": 7,
+        "severity": 9,
+        "status": "DOING",
+        "description": "Database optimization",
+        "specialists": "dba",
+        "action": "Add indexes",
+        "expected_result": "Queries < 100ms",
+        "created_at": "2026-03-11T14:00:00.000Z",
+        "completed_at": null
+      }
+    ]
+  }
+}
+```
+
+**Ordering Logic:**
+- Primary sort: `priority` descending (9 → 0)
+- Secondary sort: `severity` descending (9 → 0)
+
+This ensures the most urgent AND technically impactful tasks appear first in the sprint view.
+
 ### Audit Entry
 
 Operation log for tasks and sprints.
@@ -254,6 +316,118 @@ Operation log for tasks and sprints.
   "path": "~/.roadmaps/project1.db",
   "size": 24576,
   "created_at": "2026-03-12T14:30:00.000Z"
+}
+```
+
+### Audit List Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "count": 3,
+    "total": 150,
+    "filters": {
+      "operation": null,
+      "entity_type": null,
+      "entity_id": null,
+      "since": null,
+      "until": null
+    },
+    "entries": [
+      {
+        "id": 152,
+        "operation": "TASK_STATUS_CHANGE",
+        "entity_type": "TASK",
+        "entity_id": 42,
+        "performed_at": "2026-03-13T10:30:00.000Z"
+      },
+      {
+        "id": 151,
+        "operation": "SPRINT_START",
+        "entity_type": "SPRINT",
+        "entity_id": 1,
+        "performed_at": "2026-03-13T09:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+### Audit History Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "entity_type": "TASK",
+    "entity_id": 42,
+    "count": 5,
+    "entries": [
+      {
+        "id": 152,
+        "operation": "TASK_STATUS_CHANGE",
+        "performed_at": "2026-03-13T10:30:00.000Z"
+      },
+      {
+        "id": 148,
+        "operation": "TASK_PRIORITY_CHANGE",
+        "performed_at": "2026-03-12T16:00:00.000Z"
+      },
+      {
+        "id": 145,
+        "operation": "TASK_SEVERITY_CHANGE",
+        "performed_at": "2026-03-12T14:30:00.000Z"
+      },
+      {
+        "id": 143,
+        "operation": "SPRINT_ADD_TASK",
+        "performed_at": "2026-03-12T11:00:00.000Z"
+      },
+      {
+        "id": 150,
+        "operation": "TASK_CREATE",
+        "performed_at": "2026-03-13T08:45:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+### Audit Statistics Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "period": {
+      "since": "2026-03-01T00:00:00.000Z",
+      "until": "2026-03-13T23:59:59.000Z"
+    },
+    "total_entries": 150,
+    "by_operation": {
+      "TASK_CREATE": 25,
+      "TASK_STATUS_CHANGE": 45,
+      "TASK_PRIORITY_CHANGE": 12,
+      "TASK_SEVERITY_CHANGE": 8,
+      "TASK_DELETE": 3,
+      "SPRINT_CREATE": 5,
+      "SPRINT_START": 4,
+      "SPRINT_CLOSE": 3,
+      "SPRINT_ADD_TASK": 30,
+      "SPRINT_REMOVE_TASK": 15,
+      "SPRINT_REOPEN": 1
+    },
+    "by_entity_type": {
+      "TASK": 93,
+      "SPRINT": 57
+    },
+    "first_entry": "2026-03-01T09:00:00.000Z",
+    "last_entry": "2026-03-13T18:30:00.000Z"
+  }
 }
 ```
 
@@ -355,6 +529,23 @@ Operation log for tasks and sprints.
     "details": {
       "roadmap": "project1",
       "missing_ids": [99, 100]
+    }
+  }
+}
+```
+
+### Error - Audit Entity Not Found
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "AUDIT_ENTITY_NOT_FOUND",
+    "message": "No audit entries found for TASK with ID 999 in roadmap 'project1'",
+    "details": {
+      "roadmap": "project1",
+      "entity_type": "TASK",
+      "entity_id": 999
     }
   }
 }

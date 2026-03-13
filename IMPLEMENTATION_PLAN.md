@@ -1,208 +1,281 @@
 # Plano de Implementação - LRoadmap CLI
 
-## Análise Exaustiva dos Requisitos
+## Status Atual (2026-03-13)
 
-### 1. Visão Geral do Sistema
+### Funcionalidades Implementadas ✅
 
-LRoadmap é uma CLI para gestão de roadmaps técnicos em workflows agentic, desenvolvida exclusivamente em Zig, com:
-- **Output**: JSON exclusivo (sucessos e erros)
-- **Input**: Apenas argumentos CLI (sem stdin, sem config files)
-- **Storage**: SQLite em arquivos individuais (`~/.roadmaps/*.db`)
-- **Datas**: ISO 8601 UTC (`2026-03-12T14:30:00.000Z`)
+#### Roadmap Management (100%)
+| Comando | Status | Ficheiro |
+|---------|--------|----------|
+| `rmp roadmap list` / `ls` | ✅ Implementado | `src/commands/roadmap.zig` |
+| `rmp roadmap create` / `new` | ✅ Implementado | `src/commands/roadmap.zig` |
+| `rmp roadmap remove` / `rm` | ✅ Implementado | `src/commands/roadmap.zig` |
+| `rmp roadmap use` | ✅ Implementado | `src/commands/roadmap.zig` |
 
-### 2. Estrutura de Dados
+#### Task Management (100%)
+| Comando | Status | Ficheiro |
+|---------|--------|----------|
+| `rmp task list` / `ls` | ✅ Implementado (com filtro de status) | `src/commands/task.zig` |
+| `rmp task get <ids>` | ✅ Implementado (bulk suportado) | `src/commands/task.zig` |
+| `rmp task add` / `new` | ✅ Implementado | `src/commands/task.zig` |
+| `rmp task status` / `stat` | ✅ Implementado (bulk suportado) | `src/commands/task.zig` |
+| `rmp task prio` | ✅ Implementado (bulk suportado) | `src/commands/task.zig` |
+| `rmp task sev` | ✅ Implementado (bulk suportado) | `src/commands/task.zig` |
+| `rmp task edit` | ✅ Implementado | `src/commands/task.zig` |
+| `rmp task delete` / `rm` | ✅ Implementado (bulk suportado) | `src/commands/task.zig` |
 
-#### 2.1 Tabelas SQLite
-
-**tasks** - Tarefas do roadmap
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT
-priority INTEGER (0-9, default 0)
-severity INTEGER (0-9, default 0)
-status TEXT (BACKLOG, SPRINT, DOING, TESTING, COMPLETED)
-description TEXT NOT NULL
-specialists TEXT (comma-separated)
-action TEXT NOT NULL
-expected_result TEXT NOT NULL
-created_at TEXT ISO8601
-completed_at TEXT ISO8601 (nullable)
-```
-
-**sprints** - Sprints ágeis
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT
-status TEXT (PENDING, OPEN, CLOSED)
-description TEXT NOT NULL
-created_at TEXT ISO8601
-started_at TEXT ISO8601 (nullable)
-closed_at TEXT ISO8601 (nullable)
-```
-
-**sprint_tasks** - Relacionamento N:M
-```sql
-sprint_id INTEGER FK
-task_id INTEGER FK
-added_at TEXT ISO8601
-PRIMARY KEY (sprint_id, task_id)
-```
-
-**audit** - Log completo de operações
-```sql
-id INTEGER PRIMARY KEY AUTOINCREMENT
-operation TEXT NOT NULL
-entity_type TEXT (TASK, SPRINT)
-entity_id INTEGER NOT NULL
-performed_at TEXT ISO8601
-```
-
-**_metadata** - Metadados do roadmap
-```sql
-key TEXT PRIMARY KEY
-value TEXT NOT NULL
-```
-
-#### 2.2 Enumerações
-
-**TaskStatus**: `BACKLOG` → `SPRINT` → `DOING` → `TESTING` → `COMPLETED`
-**SprintStatus**: `PENDING` → `OPEN` → `CLOSED`
-
-### 3. Comandos por Categoria
-
-#### 3.1 Global (2 comandos)
-- `rmp --help` / `-h`
-- `rmp --version` / `-v`
-
-#### 3.2 Roadmap (4 comandos)
-- `rmp roadmap list` / `ls` - Lista roadmaps
-- `rmp roadmap create <name>` / `new` - Cria roadmap
-- `rmp roadmap remove <name>` / `rm` / `delete` - Remove roadmap
-- `rmp roadmap use <name>` - Define roadmap default
-
-#### 3.3 Task (7 comandos)
-- `rmp task list` / `ls` - Lista tasks
-- `rmp task create` / `new` - Cria task
-- `rmp task get <id>` - Obtém task(s)
-- `rmp task set-status <id> <state>` / `stat` - Altera status
-- `rmp task set-priority <id> <priority>` / `prio` - Altera prioridade
-- `rmp task set-severity <id> <severity>` / `sev` - Altera severidade
-- `rmp task remove <id>` / `rm` - Remove task
-
-#### 3.4 Sprint (13 comandos)
-- `rmp sprint list` / `ls` - Lista sprints
-- `rmp sprint create` / `new` - Cria sprint
-- `rmp sprint get <id>` - Obtém sprint
-- `rmp sprint tasks <id>` - Lista tasks do sprint
-- `rmp sprint add-tasks <sprint-id> <task-ids>` / `add` - Adiciona tasks
-- `rmp sprint remove-tasks <sprint-id> <task-ids>` / `rm-tasks` - Remove tasks
-- `rmp sprint move-tasks <from> <to> <task-ids>` / `mv-tasks` - Move tasks
-- `rmp sprint update <id>` / `upd` - Atualiza descrição
-- `rmp sprint start <id>` - Inicia sprint
-- `rmp sprint close <id>` - Fecha sprint
-- `rmp sprint reopen <id>` - Reabre sprint
-- `rmp sprint stats <id>` - Estatísticas
-- `rmp sprint remove <id>` / `rm` - Remove sprint
+#### Sprint Management (100%)
+| Comando | Status | Ficheiro |
+|---------|--------|----------|
+| `rmp sprint list` / `ls` | ✅ Implementado (com filtro de status) | `src/commands/sprint.zig` |
+| `rmp sprint get <id>` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint tasks <id>` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint add` / `new` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint open` / `start` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint close` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint reopen` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint stats` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint update` / `upd` | ✅ Implementado | `src/commands/sprint.zig` |
+| `rmp sprint add-task` | ✅ Implementado (bulk suportado) | `src/commands/sprint.zig` |
+| `rmp sprint remove-task` / `rm-tasks` | ✅ Implementado (bulk suportado) | `src/commands/sprint.zig` |
+| `rmp sprint move-tasks` / `mv-tasks` | ✅ Implementado (bulk suportado) | `src/commands/sprint.zig` |
+| `rmp sprint remove` / `rm` | ✅ Implementado (bulk suportado) | `src/commands/sprint.zig` |
 
 ---
 
-## Plano de Implementação - Status Atual
+## Funcionalidades Pendentes ⏳
 
-### Fase 1: Fundação ✅
-- [x] Criar `build.zig` e `build.zig.zon`
-- [x] Estruturar diretórios `src/`, `src/commands/`, `src/db/`, `src/models/`, `src/utils/`
-- [x] `utils/time.zig`: `nowUtc()`, `formatTimestampSeconds()`, `isValidIso8601()`
-- [x] `utils/path.zig`: `getRoadmapsDir()`, `getRoadmapPath()`, `ensureDirExists()`, `isValidRoadmapName()`, `listRoadmaps()`
-- [x] `utils/json.zig`: `success()`, `errorResponse()`, `escapeString()`
-- [x] Testes unitários para utilitários
+### 1. Audit Log Management (Alta Prioridade)
 
-### Fase 2: Modelos de Dados ✅
-- [x] `models/task.zig`: Struct `Task`, Enum `TaskStatus`, `toJson()`
-- [x] `models/sprint.zig`: Struct `Sprint`, Enum `SprintStatus`
-- [x] `models/roadmap.zig`: Struct `Roadmap`
-- [x] Testes unitários para modelos
+**Local na SPEC:** `SPEC/COMMANDS.md` (linhas 529-720) e `SPEC/COMMANDS_REFERENCE.md` (linhas 245-287)
 
-### Fase 3: Camada de Database ✅
-- [x] `db/connection.zig`: `open()`, `close()`, `exec()`, `beginTransaction()`, `commit()`, `rollback()`
-- [x] `db/schema.zig`: DDL para todas as tabelas e `createSchema()`
-- [x] `db/queries.zig`:
-    - [x] `insertTask`, `updateTaskStatus`, `deleteTask`
-    - [x] `insertSprint`, `updateSprintStatus`, `deleteSprint`
-    - [x] `addTaskToSprint`, `removeTaskFromSprint`
-    - [x] `logOperation`
-    - [x] `listTasks` com filtros
-    - [x] `getTasksByIds`
-    - [x] `updateTaskPriority` / `updateTaskSeverity`
-    - [x] `moveTaskBetweenSprints`
-    - [x] `getSprintStats`
+> **Nota:** A tabela `audit` já existe no schema (`src/db/schema.zig`) e as operações são logadas via `queries.logOperation()`. O que falta é a **interface CLI** para consultar estes logs.
 
-### Fase 4: Comandos Roadmap ✅
-- [x] `roadmap list` (ls)
-- [x] `roadmap create` (new)
-- [x] `roadmap remove` (rm)
-- [x] `roadmap use` (set default)
+#### 1.1 List Audit Entries ✅
+```bash
+# Comandos especificados na SPEC:
+rmp audit list --roadmap <name>
+rmp audit ls -r <name>
 
-### Fase 5: Comandos Task ✅
-- [x] `task list` (ls)
-- [x] `task add` (new)
-- [x] `task get`
-- [x] `task status` (stat)
-- [x] `task edit`
-- [x] `task delete` (rm)
-- [x] Suporte a múltiplos IDs (bulk operations: `1,2,3`) com output JSON único
-- [x] Comandos específicos `prio` e `sev`
+# Com filtros:
+rmp audit list -r <name> --operation TASK_STATUS_CHANGE
+rmp audit list -r <name> -o SPRINT_START
+rmp audit list -r <name> --entity-type TASK
+rmp audit list -r <name> -e SPRINT
+rmp audit list -r <name> --entity-id 42
+rmp audit list -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit list -r <name> --until 2026-03-12T23:59:59.000Z
+rmp audit list -r <name> --limit 50
+```
 
-### Fase 6: Comandos Sprint ✅
-- [x] `sprint list` (ls)
-- [x] `sprint add` (new)
-- [x] `sprint open` (start)
-- [x] `sprint close`
-- [x] `sprint add-task`
-- [x] `sprint remove-task`
-- [x] `sprint get`
-- [x] `sprint tasks`
-- [x] `sprint move-tasks` (mv-tasks)
-- [x] `sprint update` (upd)
-- [x] `sprint reopen`
-- [x] `sprint stats`
-- [x] `sprint remove` (rm)
-- [x] Suporte a múltiplos IDs em operações de task e remove com output JSON único
+**Opções:**
+- `-r, --roadmap <name>`: Roadmap (obrigatório)
+- `-o, --operation <type>`: Filtrar por tipo de operação
+- `-e, --entity-type <type>`: Filtrar por tipo de entidade (TASK, SPRINT)
+- `--entity-id <id>`: Filtrar por ID de entidade específica
+- `--since <date>`: Incluir entradas a partir desta data (ISO 8601)
+- `--until <date>`: Incluir entradas até esta data (ISO 8601)
+- `-l, --limit <n>`: Limitar resultados (default: 100, max: 1000)
+- `--offset <n>`: Offset para paginação (default: 0)
 
-### Fase 7: CLI Principal ✅
-- [x] `src/main.zig`: Entry point
-- [x] `src/cli.zig`: Argument parsing e routing
-- [x] Global `--help` e `--version`
-- [x] Suporte a roadmap default via `.current`
+**JSON Output esperado:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "count": 3,
+    "total": 150,
+    "filters": { "operation": null, "entity_type": null, ... },
+    "entries": [
+      { "id": 152, "operation": "TASK_STATUS_CHANGE", "entity_type": "TASK", "entity_id": 42, "performed_at": "2026-03-13T10:30:00.000Z" },
+      ...
+    ]
+  }
+}
+```
 
-### Fase 8: Testes e Documentação ✅
-- [x] Testes unitários na maioria dos módulos
-- [x] Testes de integração end-to-end (`tests/integration_test.sh`)
-- [x] Documentação completa no README.md (atualizado)
+**Tarefas:**
+- [x] Criar `src/commands/audit.zig` com estrutura base
+- [x] Implementar `listAuditEntries()`
+- [x] Adicionar queries de filtro em `src/db/queries.zig`:
+  - [x] `listAuditEntries()` - base query com filtros
+- [x] Adicionar handler em `src/cli.zig` para comando `audit`
+- [x] Adicionar filtros: operation, entity-type, entity-id, since, until, limit, offset
 
-### Fase 9: Refinamento e Conformidade Estrita ✅
-- [x] Padronizar nomes de operações no log de auditoria conforme `SPEC/DATA_FORMATS.md`
-- [x] Adicionar validações de range (0-9) na camada CLI com erros específicos
-- [x] Expandir JSON de `help` para incluir `options`, `required` e `examples`
-- [x] Implementar campo `details` em respostas de erro críticas (ex: IDs inexistentes)
+#### 1.2 Get Entity History ✅
+```bash
+rmp audit history --roadmap <name> --entity-type TASK <id>
+rmp audit hist -r <name> -e TASK 42
+
+rmp audit history -r <name> --entity-type SPRINT <id>
+rmp audit hist -r <name> -e SPRINT 1
+```
+
+**Argumentos:**
+- `id`: ID da entidade (obrigatório)
+
+**Opções:**
+- `-r, --roadmap <name>`: Roadmap (obrigatório)
+- `-e, --entity-type <type>`: Tipo de entidade (TASK, SPRINT) - obrigatório
+
+**Tarefas:**
+- [x] Implementar `getEntityHistory()` em `src/commands/audit.zig`
+- [x] Adicionar query `getEntityHistory()` em `src/db/queries.zig`
+
+#### 1.3 Audit Statistics ✅
+```bash
+rmp audit stats --roadmap <name>
+rmp audit stats -r <name>
+
+# Estatísticas para período específico:
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z
+rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23:59:59.000Z
+```
+
+**JSON Output esperado:**
+```json
+{
+  "success": true,
+  "data": {
+    "roadmap": "project1",
+    "period": { "since": "...", "until": "..." },
+    "total_entries": 150,
+    "by_operation": { "TASK_CREATE": 25, "TASK_STATUS_CHANGE": 45, ... },
+    "by_entity_type": { "TASK": 93, "SPRINT": 57 },
+    "first_entry": "2026-03-01T09:00:00.000Z",
+    "last_entry": "2026-03-13T18:30:00.000Z"
+  }
+}
+```
+
+**Tarefas:**
+- [x] Implementar `getAuditStats()` em `src/commands/audit.zig`
+- [x] Adicionar query `getAuditStats()` em `src/db/queries.zig`
+- [x] Criar struct `AuditStats` em `src/models/audit.zig` (novo ficheiro)
 
 ---
 
-## Próximos Passos
+### 2. Melhorias nos Filtros Existentes (Média Prioridade)
 
-1. **Refinamento**: Executar a Fase 9 para garantir conformidade total com as especificações técnicas.
+#### 2.1 Task List - Filtros Adicionais ⏳
+**Local na SPEC:** `SPEC/COMMANDS_REFERENCE.md` (linhas 52-65)
+
+Filtros já implementados:
+- `-s, --status <state>`: Filtrar por status ✅
+
+Faltam:
+- `-p, --priority <n>`: Prioridade mínima (0-9)
+- `--severity <n>`: Severidade mínima (0-9)
+- `-l, --limit <n>`: Limitar resultados
+
+**Exemplos da SPEC:**
+```bash
+rmp task list -r <name> -p 5              # priority >= 5
+rmp task list -r <name> --severity 3      # severity >= 3
+rmp task list -r <name> -l 10             # limit to 10
+rmp task list -r <name> -p 5 -l 20        # combined filters
+```
+
+**Tarefas:**
+- [ ] Atualizar `handleTaskCommand` em `src/cli.zig` para parsear novas flags
+- [ ] Atualizar `listTasks()` em `src/commands/task.zig` para aceitar filtros adicionais
+- [ ] Adicionar queries parametrizadas em `src/db/queries.zig`:
+  - [ ] `listTasksFiltered(priority_min, severity_min, limit)`
+
+#### 2.2 Sprint Tasks - Filtro por Status ⏳
+**Local na SPEC:** `SPEC/COMMANDS_REFERENCE.md` (linhas 171-177)
+
+```bash
+rmp sprint tasks -r <name> 1 --status DOING
+rmp sprint tasks -r <name> 1 -s COMPLETED
+```
+
+**Tarefas:**
+- [ ] Atualizar `handleSprintCommand` em `src/cli.zig` para parsear flag de status
+- [ ] Atualizar `listSprintTasks()` em `src/commands/sprint.zig` para aceitar filtro de status
+- [ ] Adicionar query `getTasksBySprintFiltered()` em `src/db/queries.zig`
 
 ---
 
-## Resumo do Cronograma Finalizado
+## Resumo de Implementação
 
-| Fase | Componentes | Status |
-|------|-------------|--------|
-| 1 | Setup + Utils | ✅ Concluído |
-| 2 | Models | ✅ Concluído |
-| 3 | Database Layer | ✅ Concluído |
-| 4 | Roadmap Commands | ✅ Concluído |
-| 5 | Task Commands | ✅ Concluído |
-| 6 | Sprint Commands | ✅ Concluído |
-| 7 | Main + CLI | ✅ Concluído |
-| 8 | Testes + Docs | ✅ Concluído |
-| 9 | Refinamento | ✅ Concluído |
+| Categoria | Implementado | Pendente | % Completo |
+|-----------|-------------|----------|------------|
+| Roadmap | 4/4 | 0/4 | 100% |
+| Task | 8/8 | 0/8* | 100% |
+| Sprint | 13/13 | 0/13* | 100% |
+| **Audit** | **3/3** | **0/3** | **100%** |
 
-**Progresso Total Estimado**: 100% do projeto concluído.
+\* Nota: Task e Sprint têm melhorias pendentes nos filtros
+
+**Progresso Total Estimado**: ~100% do core implementado, **Audit CLI 100%**
+
+---
+
+## Estrutura de Ficheiros Proposta
+
+### Novos Ficheiros
+```
+src/
+├── commands/
+│   └── audit.zig         # NOVO: Audit commands (list, history, stats)
+└── models/
+    └── audit.zig         # NOVO: Audit models (AuditEntry, AuditStats)
+```
+
+### Ficheiros a Atualizar
+```
+src/
+├── cli.zig               # Adicionar handler para comando 'audit'
+├── commands/
+│   ├── task.zig          # Adicionar filtros em listTasks()
+│   └── sprint.zig        # Adicionar filtro em listSprintTasks()
+└── db/
+    └── queries.zig       # Adicionar queries de audit e filtros
+```
+
+---
+
+## Ordem de Implementação Recomendada
+
+### Fase 1: Audit Log Core (Alta Prioridade) 🔥
+1. Criar `src/models/audit.zig` com structs `AuditEntry` e `AuditStats`
+2. Criar `src/commands/audit.zig` com estrutura base
+3. Adicionar queries de audit em `src/db/queries.zig`:
+   - `listAuditEntries()` - listagem com filtros
+   - `getEntityHistory()` - histórico de entidade
+   - `getAuditStats()` - estatísticas
+4. Implementar `listAuditEntries()` com filtros básicos (operation, entity-type)
+5. Adicionar handler em `src/cli.zig` para comando `audit list`
+6. Implementar `getEntityHistory()` e adicionar `audit history`
+7. Implementar `getAuditStats()` e adicionar `audit stats`
+8. Adicionar filtros de data (--since, --until) e paginação (--offset)
+
+### Fase 2: Melhorias de Filtros (Média Prioridade)
+1. Atualizar `task list` com filtros de priority (`-p`) e severity (`--severity`)
+2. Atualizar `task list` com limit (`-l`)
+3. Atualizar `sprint tasks` com filtro de status (`-s`)
+
+### Fase 3: Polimento (Baixa Prioridade)
+1. Validações adicionais de input (datas ISO 8601, limites)
+2. Testes de integração para comandos de audit
+3. Atualizar documentação
+
+---
+
+## Referências
+
+- **SPEC/COMMANDS.md**: Documentação completa dos comandos (especialmente seção Audit)
+- **SPEC/COMMANDS_REFERENCE.md**: Referência rápida com exemplos
+- **SPEC/DATA_FORMATS.md**: Formatos de JSON esperados
+- **SPEC/DATABASE.md**: Schema da tabela audit
+
+---
+
+## Histórico de Alterações
+
+| Data | Descrição |
+|------|-----------|
+| 2026-03-13 | Atualizado com funcionalidades pendentes da SPEC - Audit Log (0% implementado) |
+| 2026-03-12 | Versão anterior indicava 100% concluído (sem Audit) |

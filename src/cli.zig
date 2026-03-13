@@ -3,6 +3,7 @@ const json = @import("utils/json.zig");
 const roadmap = @import("commands/roadmap.zig");
 const task = @import("commands/task.zig");
 const sprint = @import("commands/sprint.zig");
+const audit = @import("commands/audit.zig");
 const Task = @import("models/task.zig").Task;
 
 /// CLI command structure
@@ -80,6 +81,8 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try handleTaskCommand(allocator, subargs);
     } else if (std.mem.eql(u8, cmd, "sprint")) {
         try handleSprintCommand(allocator, subargs);
+    } else if (std.mem.eql(u8, cmd, "audit")) {
+        try handleAuditCommand(allocator, subargs);
     } else {
         printError(allocator, "UNKNOWN_COMMAND", try std.fmt.allocPrint(allocator, "Unknown command: {s}", .{cmd}));
         std.process.exit(1);
@@ -829,6 +832,172 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         printStdout("{s}\n", .{final_json});
     } else {
         printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown sprint subcommand: {s}", .{subcmd}));
+        std.process.exit(1);
+    }
+}
+
+// ============== AUDIT COMMANDS ==============
+
+fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len > 0 and (std.mem.eql(u8, args[0], "-h") or std.mem.eql(u8, args[0], "--help"))) {
+        printCommandHelp(allocator, "audit");
+        return;
+    }
+
+    if (args.len == 0) {
+        printError(allocator, "INVALID_INPUT", "Usage: rmp audit <subcommand> [options]\nSubcommands: list, history, stats");
+        std.process.exit(1);
+    }
+
+    const subcmd = args[0];
+    const subargs = args[1..];
+
+    if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
+        // Parse flags for list command
+        var options = audit.AuditListOptions{};
+
+        var i: usize = 0;
+        while (i < subargs.len) : (i += 1) {
+            const arg = subargs[i];
+            if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--roadmap")) {
+                // Already handled by global flag
+                i += 1;
+            } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--operation")) {
+                i += 1;
+                if (i < subargs.len) options.operation = subargs[i];
+            } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--entity-type")) {
+                i += 1;
+                if (i < subargs.len) options.entity_type = subargs[i];
+            } else if (std.mem.eql(u8, arg, "--entity-id")) {
+                i += 1;
+                if (i < subargs.len) {
+                    options.entity_id = std.fmt.parseInt(i64, subargs[i], 10) catch {
+                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{subargs[i]}));
+                        std.process.exit(1);
+                    };
+                }
+            } else if (std.mem.eql(u8, arg, "--since")) {
+                i += 1;
+                if (i < subargs.len) options.since = subargs[i];
+            } else if (std.mem.eql(u8, arg, "--until")) {
+                i += 1;
+                if (i < subargs.len) options.until = subargs[i];
+            } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
+                i += 1;
+                if (i < subargs.len) {
+                    options.limit = std.fmt.parseInt(i32, subargs[i], 10) catch {
+                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid limit: {s}", .{subargs[i]}));
+                        std.process.exit(1);
+                    };
+                    if (options.limit < 1 or options.limit > 1000) {
+                        printError(allocator, "INVALID_INPUT", "Limit must be between 1 and 1000");
+                        std.process.exit(1);
+                    }
+                }
+            } else if (std.mem.eql(u8, arg, "--offset")) {
+                i += 1;
+                if (i < subargs.len) {
+                    options.offset = std.fmt.parseInt(i32, subargs[i], 10) catch {
+                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid offset: {s}", .{subargs[i]}));
+                        std.process.exit(1);
+                    };
+                    if (options.offset < 0) {
+                        printError(allocator, "INVALID_INPUT", "Offset must be non-negative");
+                        std.process.exit(1);
+                    }
+                }
+            }
+        }
+
+        const result = audit.listAuditEntries(allocator, options) catch |err| {
+            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to list audit entries: {any}", .{err}));
+            std.process.exit(1);
+        };
+        defer allocator.free(result);
+        printStdout("{s}\n", .{result});
+    } else if (std.mem.eql(u8, subcmd, "history") or std.mem.eql(u8, subcmd, "hist")) {
+        // Parse flags for history command
+        var entity_type: ?[]const u8 = null;
+        var entity_id: ?i64 = null;
+
+        var i: usize = 0;
+        while (i < subargs.len) : (i += 1) {
+            const arg = subargs[i];
+            if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--roadmap")) {
+                // Already handled by global flag
+                i += 1;
+            } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--entity-type")) {
+                i += 1;
+                if (i < subargs.len) entity_type = subargs[i];
+            }
+        }
+
+        // Entity ID should be the last positional argument
+        if (subargs.len > 0) {
+            // Find the last non-flag argument as entity_id
+            var last_arg: ?[]const u8 = null;
+            var idx: usize = subargs.len;
+            while (idx > 0) : (idx -= 1) {
+                const a = subargs[idx - 1];
+                if (!std.mem.startsWith(u8, a, "-") and
+                    !std.mem.eql(u8, a, "TASK") and
+                    !std.mem.eql(u8, a, "SPRINT")) {
+                    last_arg = a;
+                    break;
+                }
+            }
+            if (last_arg) |id_str| {
+                entity_id = std.fmt.parseInt(i64, id_str, 10) catch {
+                    printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid entity ID: {s}", .{id_str}));
+                    std.process.exit(1);
+                };
+            }
+        }
+
+        if (entity_type == null) {
+            printError(allocator, "INVALID_INPUT", "Entity type is required. Use -e or --entity-type (TASK or SPRINT)");
+            std.process.exit(1);
+        }
+
+        if (entity_id == null) {
+            printError(allocator, "INVALID_INPUT", "Entity ID is required");
+            std.process.exit(1);
+        }
+
+        const result = audit.getEntityHistory(allocator, entity_type.?, entity_id.?) catch |err| {
+            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get entity history: {any}", .{err}));
+            std.process.exit(1);
+        };
+        defer allocator.free(result);
+        printStdout("{s}\n", .{result});
+    } else if (std.mem.eql(u8, subcmd, "stats")) {
+        // Parse flags for stats command
+        var since_filter: ?[]const u8 = null;
+        var until_filter: ?[]const u8 = null;
+
+        var i: usize = 0;
+        while (i < subargs.len) : (i += 1) {
+            const arg = subargs[i];
+            if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--roadmap")) {
+                // Already handled by global flag
+                i += 1;
+            } else if (std.mem.eql(u8, arg, "--since")) {
+                i += 1;
+                if (i < subargs.len) since_filter = subargs[i];
+            } else if (std.mem.eql(u8, arg, "--until")) {
+                i += 1;
+                if (i < subargs.len) until_filter = subargs[i];
+            }
+        }
+
+        const result = audit.getAuditStats(allocator, since_filter, until_filter) catch |err| {
+            printError(allocator, "AUDIT_ERROR", try std.fmt.allocPrint(allocator, "Failed to get audit stats: {any}", .{err}));
+            std.process.exit(1);
+        };
+        defer allocator.free(result);
+        printStdout("{s}\n", .{result});
+    } else {
+        printError(allocator, "UNKNOWN_SUBCOMMAND", try std.fmt.allocPrint(allocator, "Unknown audit subcommand: {s}", .{subcmd}));
         std.process.exit(1);
     }
 }

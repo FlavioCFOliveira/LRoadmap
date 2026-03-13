@@ -217,6 +217,23 @@ INNER JOIN sprint_tasks st ON t.id = st.task_id
 WHERE st.sprint_id = ? ORDER BY t.priority DESC;
 ```
 
+#### List Sprint Tasks Ordered (Priority → Severity)
+
+Returns all tasks in a sprint ordered by priority (descending) and severity (descending).
+
+```sql
+SELECT t.* FROM tasks t
+INNER JOIN sprint_tasks st ON t.id = st.task_id
+WHERE st.sprint_id = ?
+ORDER BY t.priority DESC, t.severity DESC;
+```
+
+**Ordering priority:**
+1. `priority` DESC (highest first: 9 → 0)
+2. `severity` DESC (highest first: 9 → 0)
+
+**Use case:** Sprint planning and execution view - tasks with highest urgency AND technical impact appear first.
+
 #### Update Status
 
 ```sql
@@ -386,11 +403,220 @@ ORDER BY performed_at DESC
 LIMIT ?;
 ```
 
+#### Query Audit Log with Filters
+
+```sql
+-- List all audit entries (most recent first)
+SELECT * FROM audit
+ORDER BY performed_at DESC
+LIMIT ? OFFSET ?;
+
+-- Filter by operation type
+SELECT * FROM audit
+WHERE operation = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Filter by entity type
+SELECT * FROM audit
+WHERE entity_type = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Filter by entity ID
+SELECT * FROM audit
+WHERE entity_type = ? AND entity_id = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Filter by date range (ISO 8601 UTC)
+SELECT * FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Combined filters
+SELECT * FROM audit
+WHERE entity_type = ?
+  AND operation = ?
+  AND performed_at >= ?
+  AND performed_at <= ?
+ORDER BY performed_at DESC
+LIMIT ? OFFSET ?;
+```
+
+#### Audit Statistics
+
+```sql
+-- Total entries count
+SELECT COUNT(*) as total_entries FROM audit;
+
+-- Count by operation type
+SELECT operation, COUNT(*) as count
+FROM audit
+GROUP BY operation
+ORDER BY count DESC;
+
+-- Count by entity type
+SELECT entity_type, COUNT(*) as count
+FROM audit
+GROUP BY entity_type;
+
+-- Statistics for specific period
+SELECT
+    COUNT(*) as total_entries,
+    COUNT(CASE WHEN entity_type = 'TASK' THEN 1 END) as task_entries,
+    COUNT(CASE WHEN entity_type = 'SPRINT' THEN 1 END) as sprint_entries,
+    MIN(performed_at) as first_entry,
+    MAX(performed_at) as last_entry
+FROM audit
+WHERE performed_at >= ? AND performed_at <= ?;
+
+-- Count by operation for specific period
+SELECT operation, COUNT(*) as count
+FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+GROUP BY operation
+ORDER BY count DESC;
+```
+
 #### Clear Audit (Maintenance)
 
 ```sql
 -- Remove old records (e.g., > 90 days)
 DELETE FROM audit WHERE performed_at < ?;
+```
+
+---
+
+## Audit Queries
+
+### List All Audit Entries
+
+```sql
+SELECT * FROM audit
+ORDER BY performed_at DESC
+LIMIT ? OFFSET ?;
+```
+
+### Filter by Operation Type
+
+```sql
+SELECT * FROM audit
+WHERE operation = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+```
+
+### Filter by Entity Type
+
+```sql
+SELECT * FROM audit
+WHERE entity_type = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+```
+
+### Filter by Entity ID
+
+```sql
+-- Complete history of a specific entity
+SELECT * FROM audit
+WHERE entity_type = ? AND entity_id = ?
+ORDER BY performed_at DESC;
+
+-- Or using separate columns
+SELECT * FROM audit
+WHERE entity_type = 'TASK' AND entity_id = 42
+ORDER BY performed_at DESC;
+```
+
+### Filter by Date Range
+
+```sql
+-- Since a specific date
+SELECT * FROM audit
+WHERE performed_at >= ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Until a specific date
+SELECT * FROM audit
+WHERE performed_at <= ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- Date range (between two dates)
+SELECT * FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+ORDER BY performed_at DESC
+LIMIT ?;
+```
+
+### Combined Filters
+
+```sql
+-- By operation and entity type
+SELECT * FROM audit
+WHERE operation = ? AND entity_type = ?
+ORDER BY performed_at DESC
+LIMIT ?;
+
+-- By entity type, operation, and date range
+SELECT * FROM audit
+WHERE entity_type = ?
+  AND operation = ?
+  AND performed_at >= ?
+  AND performed_at <= ?
+ORDER BY performed_at DESC
+LIMIT ? OFFSET ?;
+```
+
+### Get Total Count (for pagination)
+
+```sql
+-- Total entries with optional filters
+SELECT COUNT(*) FROM audit;
+
+-- With filters
+SELECT COUNT(*) FROM audit
+WHERE entity_type = ? AND operation = ?;
+```
+
+### Audit Statistics
+
+```sql
+-- Total entries in period
+SELECT COUNT(*) FROM audit
+WHERE performed_at >= ? AND performed_at <= ?;
+
+-- By operation type
+SELECT operation, COUNT(*) as count
+FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+GROUP BY operation
+ORDER BY count DESC;
+
+-- By entity type
+SELECT entity_type, COUNT(*) as count
+FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+GROUP BY entity_type
+ORDER BY count DESC;
+
+-- First and last entry dates
+SELECT MIN(performed_at) as first_entry, MAX(performed_at) as last_entry
+FROM audit;
+
+-- Combined statistics (all in one query for application processing)
+SELECT
+  operation,
+  entity_type,
+  COUNT(*) as count
+FROM audit
+WHERE performed_at >= ? AND performed_at <= ?
+GROUP BY operation, entity_type
+ORDER BY count DESC;
 ```
 
 ---

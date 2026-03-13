@@ -7,6 +7,8 @@ const Task = @import("../models/task.zig").Task;
 const TaskStatus = @import("../models/task.zig").TaskStatus;
 const Sprint = @import("../models/sprint.zig").Sprint;
 const SprintStatus = @import("../models/sprint.zig").SprintStatus;
+const AuditEntry = @import("../models/audit.zig").AuditEntry;
+const AuditStats = @import("../models/audit.zig").AuditStats;
 
 // ============== TASK QUERIES ==============
 
@@ -614,4 +616,322 @@ pub fn logOperation(conn: Connection, operation: []const u8, entity_type: []cons
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+/// Filter options for audit entries
+pub const AuditFilterOptions = struct {
+    operation: ?[]const u8 = null,
+    entity_type: ?[]const u8 = null,
+    entity_id: ?i64 = null,
+    since: ?[]const u8 = null,
+    until: ?[]const u8 = null,
+    limit: i32 = 100,
+    offset: i32 = 0,
+};
+
+/// Result struct for paginated audit list
+pub const AuditListResult = struct {
+    entries: []AuditEntry,
+    total: i64,
+};
+
+pub fn listAuditEntries(allocator: std.mem.Allocator, conn: Connection, filters: AuditFilterOptions) !AuditListResult {
+    // First, count total matching entries
+    const count_sql_base = "SELECT COUNT(*) FROM audit";
+    var count_where_parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer count_where_parts.deinit(allocator);
+
+    if (filters.operation != null) try count_where_parts.append(allocator, "operation = ?");
+    if (filters.entity_type != null) try count_where_parts.append(allocator, "entity_type = ?");
+    if (filters.entity_id != null) try count_where_parts.append(allocator, "entity_id = ?");
+    if (filters.since != null) try count_where_parts.append(allocator, "performed_at >= ?");
+    if (filters.until != null) try count_where_parts.append(allocator, "performed_at <= ?");
+
+    const count_sql = if (count_where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "{s} WHERE {s}", .{ count_sql_base, try std.mem.join(allocator, " AND ", count_where_parts.items) })
+    else
+        try allocator.dupe(u8, count_sql_base);
+    defer allocator.free(count_sql);
+
+    var count_stmt: ?*c.sqlite3_stmt = null;
+    var rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), count_sql.ptr, @intCast(count_sql.len), &count_stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(count_stmt);
+
+    // Bind filter parameters for count
+    var bind_idx: c_int = 1;
+    if (filters.operation) |op| {
+        _ = c.sqlite3_bind_text(count_stmt, bind_idx, op.ptr, @intCast(op.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.entity_type) |et| {
+        _ = c.sqlite3_bind_text(count_stmt, bind_idx, et.ptr, @intCast(et.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.entity_id) |eid| {
+        _ = c.sqlite3_bind_int64(count_stmt, bind_idx, eid);
+        bind_idx += 1;
+    }
+    if (filters.since) |s| {
+        _ = c.sqlite3_bind_text(count_stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.until) |u| {
+        _ = c.sqlite3_bind_text(count_stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    if (c.sqlite3_step(count_stmt) != c.SQLITE_ROW) return error.StepFailed;
+    const total = c.sqlite3_column_int64(count_stmt, 0);
+
+    // Now fetch the actual entries
+    const select_sql_base = "SELECT id, operation, entity_type, entity_id, performed_at FROM audit";
+    var select_where_parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer select_where_parts.deinit(allocator);
+
+    if (filters.operation != null) try select_where_parts.append(allocator, "operation = ?");
+    if (filters.entity_type != null) try select_where_parts.append(allocator, "entity_type = ?");
+    if (filters.entity_id != null) try select_where_parts.append(allocator, "entity_id = ?");
+    if (filters.since != null) try select_where_parts.append(allocator, "performed_at >= ?");
+    if (filters.until != null) try select_where_parts.append(allocator, "performed_at <= ?");
+
+    // Build select SQL with WHERE clause
+    var select_sql: []const u8 = undefined;
+    if (select_where_parts.items.len > 0) {
+        const where_clause = try std.mem.join(allocator, " AND ", select_where_parts.items);
+        defer allocator.free(where_clause);
+        select_sql = try std.fmt.allocPrint(allocator, "{s} WHERE {s} ORDER BY performed_at DESC LIMIT {d} OFFSET {d}", .{ select_sql_base, where_clause, filters.limit, filters.offset });
+    } else {
+        select_sql = try std.fmt.allocPrint(allocator, "{s} ORDER BY performed_at DESC LIMIT {d} OFFSET {d}", .{ select_sql_base, filters.limit, filters.offset });
+    }
+    defer allocator.free(select_sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), select_sql.ptr, @intCast(select_sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    // Bind filter parameters for select
+    bind_idx = 1;
+    if (filters.operation) |op| {
+        _ = c.sqlite3_bind_text(stmt, bind_idx, op.ptr, @intCast(op.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.entity_type) |et| {
+        _ = c.sqlite3_bind_text(stmt, bind_idx, et.ptr, @intCast(et.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.entity_id) |eid| {
+        _ = c.sqlite3_bind_int64(stmt, bind_idx, eid);
+        bind_idx += 1;
+    }
+    if (filters.since) |s| {
+        _ = c.sqlite3_bind_text(stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.until) |u| {
+        _ = c.sqlite3_bind_text(stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    var list: std.ArrayListUnmanaged(AuditEntry) = .empty;
+    errdefer {
+        for (list.items) |*e| e.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        const id = c.sqlite3_column_int64(stmt, 0);
+        const operation = std.mem.span(c.sqlite3_column_text(stmt, 1));
+        const entity_type = std.mem.span(c.sqlite3_column_text(stmt, 2));
+        const entity_id = c.sqlite3_column_int64(stmt, 3);
+        const performed_at = std.mem.span(c.sqlite3_column_text(stmt, 4));
+
+        try list.append(allocator, try AuditEntry.init(
+            allocator,
+            id,
+            operation,
+            entity_type,
+            entity_id,
+            performed_at,
+        ));
+    }
+
+    return AuditListResult{
+        .entries = try list.toOwnedSlice(allocator),
+        .total = total,
+    };
+}
+
+pub fn getEntityHistory(allocator: std.mem.Allocator, conn: Connection, entity_type: []const u8, entity_id: i64) ![]AuditEntry {
+    const sql =
+        \\SELECT id, operation, entity_type, entity_id, performed_at
+        \\FROM audit
+        \\WHERE entity_type = ? AND entity_id = ?
+        \\ORDER BY performed_at DESC
+    ;
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_text(stmt, 1, entity_type.ptr, @intCast(entity_type.len), c.SQLITE_STATIC);
+    _ = c.sqlite3_bind_int64(stmt, 2, entity_id);
+
+    var list: std.ArrayListUnmanaged(AuditEntry) = .empty;
+    errdefer {
+        for (list.items) |*e| e.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        const id = c.sqlite3_column_int64(stmt, 0);
+        const operation = std.mem.span(c.sqlite3_column_text(stmt, 1));
+        const et = std.mem.span(c.sqlite3_column_text(stmt, 2));
+        const eid = c.sqlite3_column_int64(stmt, 3);
+        const performed_at = std.mem.span(c.sqlite3_column_text(stmt, 4));
+
+        try list.append(allocator, try AuditEntry.init(
+            allocator,
+            id,
+            operation,
+            et,
+            eid,
+            performed_at,
+        ));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+pub fn getAuditStats(allocator: std.mem.Allocator, conn: Connection, since: ?[]const u8, until: ?[]const u8) !AuditStats {
+    var stats = AuditStats.init(allocator);
+    errdefer stats.deinit(allocator);
+
+    // Build WHERE clause for time range
+    var where_parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer where_parts.deinit(allocator);
+
+    if (since != null) try where_parts.append(allocator, "performed_at >= ?");
+    if (until != null) try where_parts.append(allocator, "performed_at <= ?");
+
+    const where_clause = if (where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "WHERE {s}", .{try std.mem.join(allocator, " AND ", where_parts.items)})
+    else
+        try allocator.dupe(u8, "");
+    defer allocator.free(where_clause);
+
+    // Get total count
+    const total_sql = if (where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "SELECT COUNT(*) FROM audit {s}", .{where_clause})
+    else
+        try allocator.dupe(u8, "SELECT COUNT(*) FROM audit");
+    defer allocator.free(total_sql);
+
+    var total_stmt: ?*c.sqlite3_stmt = null;
+    var rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), total_sql.ptr, @intCast(total_sql.len), &total_stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(total_stmt);
+
+    var bind_idx: c_int = 1;
+    if (since) |s| {
+        _ = c.sqlite3_bind_text(total_stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (until) |u| {
+        _ = c.sqlite3_bind_text(total_stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    if (c.sqlite3_step(total_stmt) == c.SQLITE_ROW) {
+        stats.total_entries = c.sqlite3_column_int64(total_stmt, 0);
+    }
+
+    // Get counts by operation
+    const op_sql = if (where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "SELECT operation, COUNT(*) FROM audit {s} GROUP BY operation", .{where_clause})
+    else
+        try allocator.dupe(u8, "SELECT operation, COUNT(*) FROM audit GROUP BY operation");
+    defer allocator.free(op_sql);
+
+    var op_stmt: ?*c.sqlite3_stmt = null;
+    rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), op_sql.ptr, @intCast(op_sql.len), &op_stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(op_stmt);
+
+    bind_idx = 1;
+    if (since) |s| {
+        _ = c.sqlite3_bind_text(op_stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (until) |u| {
+        _ = c.sqlite3_bind_text(op_stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    while (c.sqlite3_step(op_stmt) == c.SQLITE_ROW) {
+        const operation = std.mem.span(c.sqlite3_column_text(op_stmt, 0));
+        const count = c.sqlite3_column_int64(op_stmt, 1);
+        try stats.by_operation.put(try allocator.dupe(u8, operation), count);
+    }
+
+    // Get counts by entity_type
+    const et_sql = if (where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "SELECT entity_type, COUNT(*) FROM audit {s} GROUP BY entity_type", .{where_clause})
+    else
+        try allocator.dupe(u8, "SELECT entity_type, COUNT(*) FROM audit GROUP BY entity_type");
+    defer allocator.free(et_sql);
+
+    var et_stmt: ?*c.sqlite3_stmt = null;
+    rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), et_sql.ptr, @intCast(et_sql.len), &et_stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(et_stmt);
+
+    bind_idx = 1;
+    if (since) |s| {
+        _ = c.sqlite3_bind_text(et_stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (until) |u| {
+        _ = c.sqlite3_bind_text(et_stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    while (c.sqlite3_step(et_stmt) == c.SQLITE_ROW) {
+        const entity_type = std.mem.span(c.sqlite3_column_text(et_stmt, 0));
+        const count = c.sqlite3_column_int64(et_stmt, 1);
+        try stats.by_entity_type.put(try allocator.dupe(u8, entity_type), count);
+    }
+
+    // Get first and last entry dates
+    const range_sql = if (where_parts.items.len > 0)
+        try std.fmt.allocPrint(allocator, "SELECT MIN(performed_at), MAX(performed_at) FROM audit {s}", .{where_clause})
+    else
+        try allocator.dupe(u8, "SELECT MIN(performed_at), MAX(performed_at) FROM audit");
+    defer allocator.free(range_sql);
+
+    var range_stmt: ?*c.sqlite3_stmt = null;
+    rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), range_sql.ptr, @intCast(range_sql.len), &range_stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(range_stmt);
+
+    bind_idx = 1;
+    if (since) |s| {
+        _ = c.sqlite3_bind_text(range_stmt, bind_idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (until) |u| {
+        _ = c.sqlite3_bind_text(range_stmt, bind_idx, u.ptr, @intCast(u.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+
+    if (c.sqlite3_step(range_stmt) == c.SQLITE_ROW) {
+        const first_ptr = c.sqlite3_column_text(range_stmt, 0);
+        const last_ptr = c.sqlite3_column_text(range_stmt, 1);
+        if (first_ptr) |p| stats.first_entry = try allocator.dupe(u8, std.mem.span(p));
+        if (last_ptr) |p| stats.last_entry = try allocator.dupe(u8, std.mem.span(p));
+    }
+
+    return stats;
 }
