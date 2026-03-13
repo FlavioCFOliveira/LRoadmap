@@ -214,7 +214,7 @@ fn linkSQLite(b: *std.Build, exe: *std.Build.Step.Compile, _: std.Build.Resolved
         // Compile SQLite from source
         const sqlite_c = b.pathJoin(&.{ source_path, "sqlite3.c" });
         exe.addCSourceFile(.{
-            .file = b.path(sqlite_c),
+            .file = .{ .cwd_relative = sqlite_c },
             .flags = &.{
                 "-DSQLITE_THREADSAFE=1",
                 "-DSQLITE_ENABLE_FTS5",
