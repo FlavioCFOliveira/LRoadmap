@@ -723,7 +723,7 @@ pub fn listAuditEntries(allocator: std.mem.Allocator, conn: Connection, filters:
     defer count_where_parts.deinit(allocator);
 
     if (filters.operation != null) try count_where_parts.append(allocator, "operation = ?");
-    if (filters.entity_type != null) try count_where_parts.append(allocator, "entity_type = ?");
+    if (filters.entity_type != null) try count_where_parts.append(allocator, "LOWER(entity_type) = LOWER(?)");
     if (filters.entity_id != null) try count_where_parts.append(allocator, "entity_id = ?");
     if (filters.since != null) try count_where_parts.append(allocator, "performed_at >= ?");
     if (filters.until != null) try count_where_parts.append(allocator, "performed_at <= ?");
@@ -771,7 +771,7 @@ pub fn listAuditEntries(allocator: std.mem.Allocator, conn: Connection, filters:
     defer select_where_parts.deinit(allocator);
 
     if (filters.operation != null) try select_where_parts.append(allocator, "operation = ?");
-    if (filters.entity_type != null) try select_where_parts.append(allocator, "entity_type = ?");
+    if (filters.entity_type != null) try select_where_parts.append(allocator, "LOWER(entity_type) = LOWER(?)");
     if (filters.entity_id != null) try select_where_parts.append(allocator, "entity_id = ?");
     if (filters.since != null) try select_where_parts.append(allocator, "performed_at >= ?");
     if (filters.until != null) try select_where_parts.append(allocator, "performed_at <= ?");
@@ -848,7 +848,7 @@ pub fn getEntityHistory(allocator: std.mem.Allocator, conn: Connection, entity_t
     const sql =
         \\SELECT id, operation, entity_type, entity_id, performed_at
         \\FROM audit
-        \\WHERE entity_type = ? AND entity_id = ?
+        \\WHERE LOWER(entity_type) = LOWER(?) AND entity_id = ?
         \\ORDER BY performed_at DESC
     ;
 

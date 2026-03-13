@@ -22,6 +22,27 @@ pub const AuditListOptions = struct {
 
 /// List audit entries with optional filters
 pub fn listAuditEntries(allocator: std.mem.Allocator, options: AuditListOptions) ![]const u8 {
+    // Validate date range if both since and until are provided
+    if (options.since != null and options.until != null) {
+        if (!time.isValidDateRange(options.since.?, options.until.?)) {
+            return json.errorResponse(allocator, "INVALID_DATE_RANGE", "The 'since' date must be before or equal to the 'until' date");
+        }
+    }
+
+    // Validate since date if provided
+    if (options.since) |since| {
+        _ = time.parseIso8601(since) catch {
+            return json.errorResponse(allocator, "INVALID_DATE", try std.fmt.allocPrint(allocator, "Invalid since date: {s}", .{since}));
+        };
+    }
+
+    // Validate until date if provided
+    if (options.until) |until| {
+        _ = time.parseIso8601(until) catch {
+            return json.errorResponse(allocator, "INVALID_DATE", try std.fmt.allocPrint(allocator, "Invalid until date: {s}", .{until}));
+        };
+    }
+
     // Get current roadmap
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
@@ -225,6 +246,13 @@ pub fn getEntityHistory(allocator: std.mem.Allocator, entity_type: []const u8, e
 
 /// Get audit statistics
 pub fn getAuditStats(allocator: std.mem.Allocator, since: ?[]const u8, until: ?[]const u8) ![]const u8 {
+    // Validate date range if both since and until are provided
+    if (since != null and until != null) {
+        if (!time.isValidDateRange(since.?, until.?)) {
+            return json.errorResponse(allocator, "INVALID_DATE_RANGE", "The 'since' date must be before or equal to the 'until' date");
+        }
+    }
+
     // Get current roadmap
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");

@@ -148,8 +148,61 @@ assert_success "$OUT" "Remove task from sprint"
 OUT=$($EXE task get $TT_ID)
 assert_json "$OUT" ".data.status" "BACKLOG" "Task status returned to BACKLOG"
 
-# 7. Cleanup
-echo "7. Cleanup..."
+# 7. Audit Commands
+echo "7. Testing Audit Commands..."
+OUT=$($EXE audit list)
+assert_success "$OUT" "List audit entries"
+# Verify we have audit entries (at least 3: roadmap create + task create operations)
+COUNT=$(echo "$OUT" | jq -r '.data.count')
+if [ "$COUNT" -ge 3 ]; then
+    echo -e "  [${GREEN}PASS${NC}] Audit entries count ($COUNT >= 3)"
+else
+    echo -e "  [${RED}FAIL${NC}] Audit entries count ($COUNT < 3)"
+    exit 1
+fi
+
+OUT=$($EXE audit list --operation TASK_CREATE)
+assert_success "$OUT" "List audit entries filtered by operation"
+COUNT=$(echo "$OUT" | jq -r '.data.count')
+if [ "$COUNT" -ge 1 ]; then
+    echo -e "  [${GREEN}PASS${NC}] Task create audit entries exist ($COUNT)"
+else
+    echo -e "  [${RED}FAIL${NC}] Task create audit entries missing"
+    exit 1
+fi
+
+OUT=$($EXE audit list --entity-type TASK)
+assert_success "$OUT" "List audit entries filtered by entity type"
+COUNT=$(echo "$OUT" | jq -r '.data.count')
+if [ "$COUNT" -ge 1 ]; then
+    echo -e "  [${GREEN}PASS${NC}] Task audit entries exist ($COUNT)"
+else
+    echo -e "  [${RED}FAIL${NC}] Task audit entries missing"
+    exit 1
+fi
+
+OUT=$($EXE audit history -e TASK $T1_ID)
+assert_success "$OUT" "Get entity history for task"
+COUNT=$(echo "$OUT" | jq -r '.data.count')
+if [ "$COUNT" -ge 4 ]; then
+    echo -e "  [${GREEN}PASS${NC}] Task history entries exist ($COUNT >= 4)"
+else
+    echo -e "  [${RED}FAIL${NC}] Task history entries missing ($COUNT < 4)"
+    exit 1
+fi
+
+OUT=$($EXE audit stats)
+assert_success "$OUT" "Get audit stats"
+TOTAL=$(echo "$OUT" | jq -r '.data.total_entries')
+if [ "$TOTAL" -ge 3 ]; then
+    echo -e "  [${GREEN}PASS${NC}] Audit stats has entries ($TOTAL >= 3)"
+else
+    echo -e "  [${RED}FAIL${NC}] Audit stats missing entries ($TOTAL < 3)"
+    exit 1
+fi
+
+# 8. Cleanup
+echo "8. Cleanup..."
 OUT=$($EXE roadmap remove $TEST_RM)
 assert_success "$OUT" "Remove roadmap"
 

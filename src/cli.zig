@@ -1,5 +1,6 @@
 const std = @import("std");
 const json = @import("utils/json.zig");
+const time = @import("utils/time.zig");
 const roadmap = @import("commands/roadmap.zig");
 const task = @import("commands/task.zig");
 const sprint = @import("commands/sprint.zig");
@@ -891,10 +892,24 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
                 }
             } else if (std.mem.eql(u8, arg, "--since")) {
                 i += 1;
-                if (i < subargs.len) options.since = subargs[i];
+                if (i < subargs.len) {
+                    const since_str = subargs[i];
+                    if (!time.isValidIso8601(since_str)) {
+                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid since date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{since_str}));
+                        std.process.exit(1);
+                    }
+                    options.since = since_str;
+                }
             } else if (std.mem.eql(u8, arg, "--until")) {
                 i += 1;
-                if (i < subargs.len) options.until = subargs[i];
+                if (i < subargs.len) {
+                    const until_str = subargs[i];
+                    if (!time.isValidIso8601(until_str)) {
+                        printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid until date format: {s}. Expected ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)", .{until_str}));
+                        std.process.exit(1);
+                    }
+                    options.until = until_str;
+                }
             } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
                 i += 1;
                 if (i < subargs.len) {

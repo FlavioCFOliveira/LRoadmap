@@ -39,6 +39,36 @@ assert_error() {
     fi
 }
 
+# Helper function to assert JSON field
+assert_json() {
+    local json="$1"
+    local query="$2"
+    local expected="$3"
+    local message="$4"
+
+    local actual=$(echo "$json" | jq -r "$query")
+    if [ "$actual" == "$expected" ]; then
+        echo -e "  [${GREEN}PASS${NC}] $message"
+    else
+        echo -e "  [${RED}FAIL${NC}] $message (Expected: $expected, Actual: $actual)"
+        exit 1
+    fi
+}
+
+# Helper to assert success: true
+assert_success() {
+    local out="$1"
+    local message="$2"
+    local actual=$(echo "$out" | jq -r ".success")
+    if [ "$actual" == "true" ]; then
+        echo -e "  [${GREEN}PASS${NC}] $message"
+    else
+        echo -e "  [${RED}FAIL${NC}] $message (Expected: true, Actual: $actual)"
+        echo "  Output: $out"
+        exit 1
+    fi
+}
+
 # 1. Roadmap Validation
 echo "1. Testing Roadmap Validation..."
 assert_error "$EXE roadmap create" "INVALID_INPUT" "Missing roadmap name"
@@ -81,5 +111,26 @@ assert_error "$EXE task get 9223372036854775808" "INVALID_INPUT" "Task ID overfl
 echo "6. Testing Quantity of Parameters..."
 assert_error "$EXE task get 1 2" "INVALID_INPUT" "Too many arguments for task get"
 assert_error "$EXE task status 1 DOING extra" "INVALID_INPUT" "Too many arguments for task status"
+
+# 7. Audit Commands Validation
+echo "7. Testing Audit Commands Validation..."
+assert_error "$EXE audit list --since invalid-date" "INVALID_INPUT" "Invalid since date format"
+assert_error "$EXE audit list --until invalid-date" "INVALID_INPUT" "Invalid until date format"
+
+# Create a roadmap for audit tests
+$EXE roadmap create $TEST_RM > /dev/null
+$EXE roadmap use $TEST_RM > /dev/null
+
+# Test invalid date ranges
+assert_error "$EXE audit list --since 2024-12-31T00:00:00.000Z --until 2024-01-01T00:00:00.000Z" "INVALID_DATE_RANGE" "Since date after until date"
+assert_error "$EXE audit stats --since 2025-01-01T00:00:00.000Z --until 2024-01-01T00:00:00.000Z" "INVALID_DATE_RANGE" "Stats with invalid date range"
+
+# Test invalid operation type (should work but return empty results, not error)
+OUT=$($EXE audit list --operation INVALID_OPERATION)
+assert_success "$OUT" "Invalid operation type returns empty results"
+assert_json "$OUT" ".data.count" "0" "Empty results for invalid operation"
+
+# Cleanup
+$EXE roadmap remove $TEST_RM > /dev/null
 
 echo -e "\n${GREEN}Negative Tests Battery Completed!${NC}"
