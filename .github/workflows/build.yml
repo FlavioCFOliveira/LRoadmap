@@ -89,12 +89,23 @@ jobs:
         uses: goto-bus-stop/setup-zig@v2
         with:
           version: 0.15.2
-      - name: Install SQLite
+      - name: Download SQLite Amalgamation
+        shell: powershell
         run: |
-          choco install sqlite
-          echo "C:\ProgramData\chocolatey\lib\SQLite\tools" >> $env:GITHUB_PATH
+          # Download SQLite amalgamation source
+          $sqliteVersion = "3470200"
+          $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
+          Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
+          Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
+          Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
+          Remove-Item -Recurse -Force "sqlite-src"
+          Remove-Item "sqlite.zip"
       - name: Build
-        run: zig build
+        shell: powershell
+        run: |
+          # Set environment variable for build.zig to detect
+          $env:SQLITE_SOURCE = "$PWD\sqlite3-src"
+          zig build
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -109,12 +120,23 @@ jobs:
         uses: goto-bus-stop/setup-zig@v2
         with:
           version: 0.15.2
-      - name: Install SQLite
+      - name: Download SQLite Amalgamation
+        shell: powershell
         run: |
-          choco install sqlite
-          echo "C:\ProgramData\chocolatey\lib\SQLite\tools" >> $env:GITHUB_PATH
+          # Download SQLite amalgamation source
+          $sqliteVersion = "3470200"
+          $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
+          Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
+          Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
+          Move-Item -Path "sqlite-src\sqlite-amalgamation-$sqliteVersion\*" -Destination "sqlite3-src"
+          Remove-Item -Recurse -Force "sqlite-src"
+          Remove-Item "sqlite.zip"
       - name: Build
-        run: zig build
+        shell: powershell
+        run: |
+          # Set environment variable for build.zig to detect
+          $env:SQLITE_SOURCE = "$PWD\sqlite3-src"
+          zig build
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

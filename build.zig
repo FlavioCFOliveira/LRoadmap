@@ -96,9 +96,9 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // Link with SQLite (system library)
+    // Link with SQLite (system library or source)
     exe.linkLibC();
-    exe.linkSystemLibrary("sqlite3");
+    linkSQLite(b, exe, target);
 
     // Install with architecture-specific directory: ./zig-out/[arch]/bin/rmp
     const install_path = target_arch.getInstallPath(b);
@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
     });
 
     unit_tests.linkLibC();
-    unit_tests.linkSystemLibrary("sqlite3");
+    linkSQLite(b, unit_tests, target);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
@@ -187,7 +187,7 @@ fn addCrossCompileSteps(b: *std.Build, optimize: std.builtin.OptimizeMode) void 
 
         cross_exe.linkLibC();
         // Note: When cross-compiling, SQLite needs to be available for the target
-        cross_exe.linkSystemLibrary("sqlite3");
+        linkSQLite(b, cross_exe, target);
 
         // Set custom output path
         const install_path = info.arch.getInstallPath(b);
@@ -204,4 +204,25 @@ fn addCrossCompileSteps(b: *std.Build, optimize: std.builtin.OptimizeMode) void 
     // Native build step (default behavior)
     const native_step = b.step("build-native", "Build for native architecture");
     native_step.dependOn(b.getInstallStep());
+}
+
+fn linkSQLite(b: *std.Build, exe: *std.Build.Step.Compile, _: std.Build.ResolvedTarget) void {
+    // Check for SQLITE_SOURCE environment variable (used in CI for Windows)
+    const sqlite_source_path = b.graph.env_map.get("SQLITE_SOURCE");
+
+    if (sqlite_source_path) |source_path| {
+        // Compile SQLite from source
+        const sqlite_c = b.pathJoin(&.{ source_path, "sqlite3.c" });
+        exe.addCSourceFile(.{
+            .file = b.path(sqlite_c),
+            .flags = &.{
+                "-DSQLITE_THREADSAFE=1",
+                "-DSQLITE_ENABLE_FTS5",
+                "-DSQLITE_ENABLE_RTREE",
+            },
+        });
+    } else {
+        // Link with system SQLite
+        exe.linkSystemLibrary("sqlite3");
+    }
 }
