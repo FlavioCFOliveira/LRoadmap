@@ -349,31 +349,22 @@ All responses are JSON:
 
 ```json
 {
-  "success": true,
-  "data": {
-    "id": 1,
-    "priority": 9,
-    "severity": 3,
-    "status": "DOING",
-    "description": "Implement auth",
-    "action": "Create JWT",
-    "expected_result": "Login works",
-    "created_at": "2026-03-12T15:00:00.000Z",
-    "completed_at": null
-  }
+  "id": 1,
+  "priority": 9,
+  "severity": 3,
+  "status": "DOING",
+  "description": "Implement auth",
+  "action": "Create JWT",
+  "expected_result": "Login works",
+  "created_at": "2026-03-12T15:00:00.000Z",
+  "completed_at": null
 }
 ```
 
 Errors:
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TASK_NOT_FOUND",
-    "message": "Task(s) with ID(s) [99] not found"
-  }
-}
+```
+Error: Task(s) with ID(s) [99] not found
 ```
 
 ## License

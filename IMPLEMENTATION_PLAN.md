@@ -196,14 +196,11 @@ cli.run(allocator, args) catch |err| {
 **Descrição Técnica:** Reimplementar help em `src/cli.zig` para retornar:
 ```json
 {
-  "success": true,
-  "data": {
-    "command": "task create",
-    "description": "Creates a new task...",
-    "usage": "rmp task create [OPTIONS]",
-    "options": [...],
-    "examples": [...]
-  }
+  "command": "task create",
+  "description": "Creates a new task...",
+  "usage": "rmp task create [OPTIONS]",
+  "options": [...],
+  "examples": [...]
 }
 ```
 **Ficheiros Afetados:** `src/cli.zig:91-93, 139-142` e funções de help associadas
