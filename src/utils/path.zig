@@ -92,21 +92,6 @@ pub fn fileExists(path: []const u8) bool {
     return true;
 }
 
-/// Checks if a file is a valid SQLite database.
-/// Validates by checking the SQLite magic bytes.
-pub fn isValidSQLiteFile(path: []const u8) bool {
-    const file = std.fs.cwd().openFile(path, .{}) catch return false;
-    defer file.close();
-
-    var magic: [16]u8 = undefined;
-    const bytes_read = file.read(&magic) catch return false;
-    if (bytes_read < 16) return false;
-
-    // SQLite magic bytes: "SQLite format 3\x00"
-    const sqlite_magic = "SQLite format 3\x00";
-    return std.mem.eql(u8, magic[0..sqlite_magic.len], sqlite_magic);
-}
-
 /// Returns the roadmap name from a file path (without extension).
 /// Caller owns the returned memory.
 pub fn getRoadmapNameFromPath(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
@@ -135,12 +120,12 @@ pub fn listRoadmaps(allocator: std.mem.Allocator) ![][]const u8 {
     };
     defer dir.close();
 
-    var names = std.ArrayList([]const u8).init(allocator);
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer {
         for (names.items) |name| {
             allocator.free(name);
         }
-        names.deinit();
+        names.deinit(allocator);
     }
 
     var iter = dir.iterate();
@@ -151,12 +136,12 @@ pub fn listRoadmaps(allocator: std.mem.Allocator) ![][]const u8 {
             const clean_name = name[0 .. name.len - ROADMAP_EXTENSION.len];
             const name_copy = try allocator.dupe(u8, clean_name);
             allocator.free(name);
-            try names.append(name_copy);
+            try names.append(allocator, name_copy);
         }
     }
 
     // Transfer ownership
-    const result = try names.toOwnedSlice();
+    const result = try names.toOwnedSlice(allocator);
     return result;
 }
 

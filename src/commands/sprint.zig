@@ -177,6 +177,9 @@ pub fn closeSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
         return json.errorResponse(allocator, "DB_ERROR", "Failed to update sprint status");
     };
 
+    // Update closed_at timestamp
+    try queries.updateSprintClosedAt(conn, sprint_id, now);
+
     // Log operation
     try queries.logOperation(conn, "SPRINT_CLOSE", "SPRINT", sprint_id, now);
 
@@ -232,7 +235,7 @@ pub fn listSprints(allocator: std.mem.Allocator, status_filter: ?SprintStatus) !
     const sprints_str = try std.mem.join(allocator, ",", json_sprints.items);
     defer allocator.free(sprints_str);
 
-    const result = try std.fmt.allocPrint(allocator, "{{\"count\":{d},\"sprints\":[{s}]}}", .{ sprints.len, sprints_str });
+    const result = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"sprints\":[{s}]}}", .{ current, sprints.len, sprints_str });
     defer allocator.free(result);
 
     return json.success(allocator, result);
@@ -428,9 +431,9 @@ pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64, status_filt
     defer allocator.free(tasks_str);
 
     const result = if (status_filter) |s|
-        try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"status_filter\":\"{s}\",\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, s.toString(), tasks_str })
+        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"sprint_id\":{d},\"count\":{d},\"status_filter\":\"{s}\",\"tasks\":[{s}]}}", .{ current, sprint_id, tasks.len, s.toString(), tasks_str })
     else
-        try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, tasks_str });
+        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"sprint_id\":{d},\"count\":{d},\"tasks\":[{s}]}}", .{ current, sprint_id, tasks.len, tasks_str });
     defer allocator.free(result);
 
     return json.success(allocator, result);
@@ -530,7 +533,7 @@ pub fn getSprintStats(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 
 
     // Convert stats to JSON
     const response = try std.fmt.allocPrint(allocator,
-        \\{{"id":{d},"description":"{s}","status":"{s}","created_at":"{s}","started_at":{s},"closed_at":{s},"total_tasks":{d},"completion_percentage":{d},"by_status":{{"BACKLOG":{d},"SPRINT":{d},"DOING":{d},"TESTING":{d},"COMPLETED":{d}}}}}
+        \\{{"sprint_id":{d},"description":"{s}","status":"{s}","created_at":"{s}","started_at":{s},"closed_at":{s},"total_tasks":{d},"completion_percentage":{d},"by_status":{{"BACKLOG":{d},"SPRINT":{d},"DOING":{d},"TESTING":{d},"COMPLETED":{d}}}}}
     , .{
         stats.id,
         stats.description,

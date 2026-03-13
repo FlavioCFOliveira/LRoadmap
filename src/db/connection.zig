@@ -2,6 +2,76 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("sqlite3.h");
 });
+const text_utils = @import("../utils/text.zig");
+
+/// Context for collation comparison
+const CollationContext = struct {
+    allocator: std.mem.Allocator,
+};
+
+/// Custom collation function for case-insensitive and accent-insensitive comparison.
+/// This function is called by SQLite when comparing strings with the "NOCASE_AI" collation.
+export fn nocaseAiCollation(context: ?*anyopaque, len_a: c_int, a: ?*const anyopaque, len_b: c_int, b: ?*const anyopaque) callconv(.c) c_int {
+    _ = context;
+
+    if (a == null and b == null) return 0;
+    if (a == null) return -1;
+    if (b == null) return 1;
+
+    const slice_a = @as([*c]const u8, @ptrCast(a.?))[0..@intCast(len_a)];
+    const slice_b = @as([*c]const u8, @ptrCast(b.?))[0..@intCast(len_b)];
+
+    // Create a temporary arena allocator for this comparison
+    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Normalize both strings
+    const norm_a = text_utils.normalizeUtf8(allocator, slice_a) catch {
+        // On error, fall back to simple case-insensitive comparison
+        return @as(c_int, simpleCaseInsensitiveCompare(slice_a, slice_b));
+    };
+    const norm_b = text_utils.normalizeUtf8(allocator, slice_b) catch {
+        return @as(c_int, simpleCaseInsensitiveCompare(slice_a, slice_b));
+    };
+
+    // Compare normalized strings
+    const cmp = std.mem.order(u8, norm_a, norm_b);
+    return switch (cmp) {
+        .lt => -1,
+        .eq => 0,
+        .gt => 1,
+    };
+}
+
+/// Simple fallback for case-insensitive comparison (ASCII only)
+fn simpleCaseInsensitiveCompare(a: []const u8, b: []const u8) i8 {
+    const min_len = @min(a.len, b.len);
+    for (0..min_len) |i| {
+        const ca = std.ascii.toLower(a[i]);
+        const cb = std.ascii.toLower(b[i]);
+        if (ca < cb) return -1;
+        if (ca > cb) return 1;
+    }
+    if (a.len < b.len) return -1;
+    if (a.len > b.len) return 1;
+    return 0;
+}
+
+/// Registers the NOCASE_AI collation for case-insensitive and accent-insensitive comparison.
+/// Call this after opening a database connection.
+pub fn registerNoCaseAiCollation(db: *c.sqlite3) !void {
+    const rc = c.sqlite3_create_collation(
+        db,
+        "NOCASE_AI",
+        c.SQLITE_UTF8,
+        null, // context
+        nocaseAiCollation,
+    );
+    if (rc != c.SQLITE_OK) {
+        return error.CollationRegistrationFailed;
+    }
+}
 
 /// Database connection wrapper
 pub const Connection = struct {
@@ -53,6 +123,19 @@ pub const Connection = struct {
 
         const busy_rc = c.sqlite3_exec(db, "PRAGMA busy_timeout = 5000", null, null, null);
         if (busy_rc != c.SQLITE_OK) {
+            _ = c.sqlite3_close(db);
+            return error.DbOpenFailed;
+        }
+
+        // Register custom collation for case-insensitive and accent-insensitive comparison
+        const collation_rc = c.sqlite3_create_collation(
+            db,
+            "NOCASE_AI",
+            c.SQLITE_UTF8,
+            null,
+            nocaseAiCollation,
+        );
+        if (collation_rc != c.SQLITE_OK) {
             _ = c.sqlite3_close(db);
             return error.DbOpenFailed;
         }

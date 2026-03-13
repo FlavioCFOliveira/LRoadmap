@@ -209,6 +209,16 @@ pub fn changeTaskStatus(allocator: std.mem.Allocator, ids: []const i64, new_stat
         return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
+    // Validate status transitions for all tasks
+    for (existing_ids) |id| {
+        const current_status = try queries.getTaskStatus(conn, id);
+        if (!current_status.isValidTransition(new_status)) {
+            const msg = try std.fmt.allocPrint(allocator, "Cannot transition task {d} from {s} to {s}", .{ id, current_status.toString(), new_status.toString() });
+            defer allocator.free(msg);
+            return json.errorResponse(allocator, "INVALID_STATUS_TRANSITION", msg);
+        }
+    }
+
     // Begin transaction for atomicity
     try conn.beginTransaction();
 

@@ -123,6 +123,22 @@ pub fn updateTaskCompletedAt(conn: Connection, id: i64, completed_at: ?[]const u
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
 }
 
+/// Gets the current status of a task by ID
+pub fn getTaskStatus(conn: Connection, id: i64) !TaskStatus {
+    const sql = "SELECT status FROM tasks WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, id);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.TaskNotFound;
+
+    const status_str = std.mem.span(c.sqlite3_column_text(stmt, 0));
+    return TaskStatus.fromString(status_str);
+}
+
 pub fn getTaskById(allocator: std.mem.Allocator, conn: Connection, id: i64) !Task {
     const sql = "SELECT id, priority, severity, status, description, specialists, action, expected_result, created_at, completed_at FROM tasks WHERE id = ?";
     var stmt: ?*c.sqlite3_stmt = null;

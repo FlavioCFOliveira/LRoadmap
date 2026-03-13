@@ -33,14 +33,8 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     cli.run(allocator, args) catch |err| {
-        const err_name = @errorName(err);
-        const err_msg = "An unexpected error occurred during execution";
-
-        const err_json = json.errorResponse(allocator, err_name, err_msg) catch "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}";
-        defer if (!std.mem.eql(u8, err_json, "{\"success\":false,\"error\":{\"code\":\"FATAL\",\"message\":\"Critical system failure\"}}")) allocator.free(err_json);
-
         const stderr = std.fs.File.stderr().deprecatedWriter();
-        stderr.print("{s}\n", .{err_json}) catch {};
+        stderr.print("Error: {s}\n", .{@errorName(err)}) catch {};
         std.process.exit(1);
     };
 }

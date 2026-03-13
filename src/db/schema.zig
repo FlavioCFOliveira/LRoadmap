@@ -17,8 +17,13 @@ pub fn createSchema(conn: Connection) !void {
     try conn.exec(CREATE_INDEX_TASKS_STATUS);
     try conn.exec(CREATE_INDEX_TASKS_PRIORITY);
     try conn.exec(CREATE_INDEX_TASKS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_TASKS_DESCRIPTION);
+    try conn.exec(CREATE_INDEX_TASKS_ACTION);
+    try conn.exec(CREATE_INDEX_TASKS_EXPECTED_RESULT);
+    try conn.exec(CREATE_INDEX_TASKS_SPECIALISTS);
     try conn.exec(CREATE_INDEX_SPRINTS_STATUS);
     try conn.exec(CREATE_INDEX_SPRINTS_CREATED_AT);
+    try conn.exec(CREATE_INDEX_SPRINTS_DESCRIPTION);
     try conn.exec(CREATE_INDEX_SPRINT_TASKS_TASK_ID);
     try conn.exec(CREATE_INDEX_AUDIT_ENTITY);
     try conn.exec(CREATE_INDEX_AUDIT_OPERATION);
@@ -27,17 +32,6 @@ pub fn createSchema(conn: Connection) !void {
     // Insert schema version
     try conn.exec(INSERT_SCHEMA_VERSION);
     try conn.exec(INSERT_APPLICATION);
-
-    // Create indexes for performance
-    try conn.exec(CREATE_INDEX_TASKS_STATUS);
-    try conn.exec(CREATE_INDEX_TASKS_PRIORITY);
-    try conn.exec(CREATE_INDEX_TASKS_CREATED_AT);
-    try conn.exec(CREATE_INDEX_SPRINTS_STATUS);
-    try conn.exec(CREATE_INDEX_SPRINTS_CREATED_AT);
-    try conn.exec(CREATE_INDEX_SPRINT_TASKS_TASK_ID);
-    try conn.exec(CREATE_INDEX_AUDIT_ENTITY);
-    try conn.exec(CREATE_INDEX_AUDIT_OPERATION);
-    try conn.exec(CREATE_INDEX_AUDIT_PERFORMED_AT);
 }
 
 /// Checks if schema exists by looking for _metadata table
@@ -86,27 +80,29 @@ pub fn getApplication(conn: Connection, allocator: std.mem.Allocator) ![]const u
 }
 
 /// DDL for tasks table
+/// Uses COLLATE NOCASE for case-insensitive text comparison
 pub const CREATE_TASKS_TABLE =
     \\CREATE TABLE IF NOT EXISTS tasks (
     \\    id INTEGER PRIMARY KEY AUTOINCREMENT,
     \\    priority INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0 AND priority <= 9),
     \\    severity INTEGER NOT NULL DEFAULT 0 CHECK(severity >= 0 AND severity <= 9),
     \\    status TEXT NOT NULL DEFAULT 'BACKLOG' CHECK(status IN ('BACKLOG', 'SPRINT', 'DOING', 'TESTING', 'COMPLETED')),
-    \\    description TEXT NOT NULL,
-    \\    specialists TEXT,
-    \\    action TEXT NOT NULL,
-    \\    expected_result TEXT NOT NULL,
+    \\    description TEXT NOT NULL COLLATE NOCASE,
+    \\    specialists TEXT COLLATE NOCASE,
+    \\    action TEXT NOT NULL COLLATE NOCASE,
+    \\    expected_result TEXT NOT NULL COLLATE NOCASE,
     \\    created_at TEXT NOT NULL,
     \\    completed_at TEXT
     \\)
 ;
 
 /// DDL for sprints table
+/// Uses COLLATE NOCASE for case-insensitive text comparison
 pub const CREATE_SPRINTS_TABLE =
     \\CREATE TABLE IF NOT EXISTS sprints (
     \\    id INTEGER PRIMARY KEY AUTOINCREMENT,
     \\    status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'OPEN', 'CLOSED')),
-    \\    description TEXT NOT NULL,
+    \\    description TEXT NOT NULL COLLATE NOCASE,
     \\    created_at TEXT NOT NULL,
     \\    started_at TEXT,
     \\    closed_at TEXT
@@ -154,6 +150,11 @@ pub const INSERT_APPLICATION =
     \\INSERT OR REPLACE INTO _metadata (key, value) VALUES ('application', 'LRoadmap')
 ;
 
+/// Collation for case-insensitive and accent-insensitive comparison.
+/// Requires the custom collation "NOCASE_AI" to be registered via connection.registerNoCaseAiCollation().
+/// This is used for text fields that need both case and accent insensitivity.
+pub const COLLATE_NOCASE_AI = "NOCASE_AI";
+
 // ============== INDEXES ==============
 
 /// Index for tasks status filtering
@@ -171,6 +172,27 @@ pub const CREATE_INDEX_TASKS_CREATED_AT =
     \\CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)
 ;
 
+/// Index for tasks description (case-insensitive search)
+pub const CREATE_INDEX_TASKS_DESCRIPTION =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_description ON tasks(description COLLATE NOCASE)
+;
+
+/// Index for tasks action (case-insensitive search)
+pub const CREATE_INDEX_TASKS_ACTION =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_action ON tasks(action COLLATE NOCASE)
+;
+
+/// Index for tasks expected_result (case-insensitive search)
+pub const CREATE_INDEX_TASKS_EXPECTED_RESULT =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_expected_result ON tasks(expected_result COLLATE NOCASE)
+;
+
+/// Index for tasks specialists (case-insensitive search)
+pub const CREATE_INDEX_TASKS_SPECIALISTS =
+    \\CREATE INDEX IF NOT EXISTS idx_tasks_specialists ON tasks(specialists COLLATE NOCASE)
+    \\WHERE specialists IS NOT NULL
+;
+
 /// Index for sprints status filtering
 pub const CREATE_INDEX_SPRINTS_STATUS =
     \\CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status)
@@ -179,6 +201,11 @@ pub const CREATE_INDEX_SPRINTS_STATUS =
 /// Index for sprints created_at date range queries
 pub const CREATE_INDEX_SPRINTS_CREATED_AT =
     \\CREATE INDEX IF NOT EXISTS idx_sprints_created_at ON sprints(created_at)
+;
+
+/// Index for sprints description (case-insensitive search)
+pub const CREATE_INDEX_SPRINTS_DESCRIPTION =
+    \\CREATE INDEX IF NOT EXISTS idx_sprints_description ON sprints(description COLLATE NOCASE)
 ;
 
 /// Index for sprint_tasks task_id lookups
