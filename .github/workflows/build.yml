@@ -45,24 +45,6 @@ jobs:
           name: rmp-aarch64-linux
           path: zig-out/aarch64-linux/bin/rmp
 
-  build-macos-x86_64:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.15.2
-      - name: Install SQLite
-        run: brew install sqlite3
-      - name: Build
-        run: zig build
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rmp-x86_64-macos
-          path: zig-out/x86_64-macos/bin/rmp
-
   build-macos-aarch64:
     runs-on: macos-latest
     steps:
@@ -163,7 +145,7 @@ jobs:
 
   # Continuous Release on main branch (overwrites previous dev release)
   dev-release:
-    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-x86_64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -183,7 +165,6 @@ jobs:
           mkdir -p release
           cp artifacts/rmp-x86_64-linux/rmp release/rmp-x86_64-linux
           cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
-          cp artifacts/rmp-x86_64-macos/rmp release/rmp-x86_64-macos
           cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
           cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
           cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
@@ -212,7 +193,6 @@ jobs:
             ### Binaries
             - `rmp-x86_64-linux` - Linux x86_64
             - `rmp-aarch64-linux` - Linux ARM64
-            - `rmp-x86_64-macos` - macOS x86_64 (Intel)
             - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
             - `rmp-x86_64-windows.exe` - Windows x86_64
             - `rmp-aarch64-windows.exe` - Windows ARM64
@@ -228,7 +208,7 @@ jobs:
 
   # Release on tags (v*)
   release:
-    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-x86_64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -248,7 +228,6 @@ jobs:
           mkdir -p release
           cp artifacts/rmp-x86_64-linux/rmp release/rmp-x86_64-linux
           cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
-          cp artifacts/rmp-x86_64-macos/rmp release/rmp-x86_64-macos
           cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
           cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
           cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
@@ -274,7 +253,6 @@ jobs:
             ### Binaries
             - `rmp-x86_64-linux` - Linux x86_64
             - `rmp-aarch64-linux` - Linux ARM64
-            - `rmp-x86_64-macos` - macOS x86_64 (Intel)
             - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
             - `rmp-x86_64-windows.exe` - Windows x86_64
             - `rmp-aarch64-windows.exe` - Windows ARM64

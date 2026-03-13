@@ -4,7 +4,6 @@ const std = @import("std");
 const TargetArch = enum {
     native,
     x86_64_linux,
-    x86_64_macos,
     aarch64_linux,
     aarch64_macos,
     x86_64_windows,
@@ -16,10 +15,6 @@ const TargetArch = enum {
             .x86_64_linux => .{
                 .cpu_arch = .x86_64,
                 .os_tag = .linux,
-            },
-            .x86_64_macos => .{
-                .cpu_arch = .x86_64,
-                .os_tag = .macos,
             },
             .aarch64_linux => .{
                 .cpu_arch = .aarch64,
@@ -44,7 +39,6 @@ const TargetArch = enum {
         const arch_name = switch (self) {
             .native => getNativeArchName(b),
             .x86_64_linux => "x86_64-linux",
-            .x86_64_macos => "x86_64-macos",
             .aarch64_linux => "aarch64-linux",
             .aarch64_macos => "aarch64-macos",
             .x86_64_windows => "x86_64-windows",
@@ -73,7 +67,7 @@ pub fn build(b: *std.Build) void {
     const target_arch: TargetArch = b.option(
         TargetArch,
         "target-arch",
-        "Target architecture for cross-compilation (native, x86_64_linux, x86_64_macos, aarch64_linux, aarch64_macos, x86_64_windows, aarch64_windows)",
+        "Target architecture for cross-compilation (native, x86_64_linux, aarch64_linux, aarch64_macos, x86_64_windows, aarch64_windows)",
     ) orelse .native;
 
     const target = b.resolveTargetQuery(target_arch.getTarget());
@@ -161,7 +155,6 @@ fn addCrossCompileSteps(b: *std.Build, optimize: std.builtin.OptimizeMode) void 
     const archs = .{
         .{ .name = "build-x86_64-linux", .arch = TargetArch.x86_64_linux, .display = "x86_64 Linux" },
         .{ .name = "build-aarch64-linux", .arch = TargetArch.aarch64_linux, .display = "aarch64 Linux" },
-        .{ .name = "build-x86_64-macos", .arch = TargetArch.x86_64_macos, .display = "x86_64 macOS" },
         .{ .name = "build-aarch64-macos", .arch = TargetArch.aarch64_macos, .display = "aarch64 macOS" },
         .{ .name = "build-x86_64-windows", .arch = TargetArch.x86_64_windows, .display = "x86_64 Windows" },
         .{ .name = "build-aarch64-windows", .arch = TargetArch.aarch64_windows, .display = "aarch64 Windows" },
