@@ -93,7 +93,7 @@ jobs:
         shell: powershell
         run: |
           # Download SQLite amalgamation source
-          $sqliteVersion = "3470200"
+          $sqliteVersion = "3510300"
           $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
           Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
@@ -124,7 +124,7 @@ jobs:
         shell: powershell
         run: |
           # Download SQLite amalgamation source
-          $sqliteVersion = "3470200"
+          $sqliteVersion = "3510300"
           $url = "https://www.sqlite.org/2025/sqlite-amalgamation-$sqliteVersion.zip"
           Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
           Expand-Archive -Path "sqlite.zip" -DestinationPath "sqlite-src"
