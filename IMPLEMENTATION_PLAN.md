@@ -263,11 +263,11 @@ Verificar códigos de retorno de `sqlite3_bind_*` em vez de ignorar com `_ =`.
 | Categoria | Tarefas | Prioridade | % Completo |
 |-----------|---------|------------|------------|
 | **Alta** | 4 | 🔴 | 100% |
-| **Média** | 4 | 🟠 | 50% |
-| **Baixa** | 3 | 🟡 | 0% |
-| **Melhorias** | 2 | ⚪ | 0% |
+| **Média** | 4 | 🟠 | 100% |
+| **Baixa** | 3 | 🟡 | 100% |
+| **Melhorias** | 2 | ⚪ | 100% |
 
-**Progresso Total:** 50%
+**Progresso Total:** 100%
 
 ### Tarefas Concluídas
 
@@ -277,15 +277,12 @@ Verificar códigos de retorno de `sqlite3_bind_*` em vez de ignorar com `_ =`.
 - **T003** ✅ - Implementar help em erros de input
 - **T006** ✅ - Corrigir ordenação de tasks em sprint
 - **T005** ✅ - Corrigir enum OperationType em audit.zig
-
-### Tarefas Pendentes
-
-- **T004** 🔄 - Implementar bulk operations
-- **T007** 🔄 - Completar sprint stats
-- **T008** ⏳ - Adicionar transações SQL
-- **T009** ⏳ - Validar ranges (0-9)
-- **T011** ⏳ - Adicionar alias `aud` para audit
-- **T012** ⏳ - Validar SQLite binds
+- **T004** ✅ - Implementar bulk operations para tasks
+- **T007** ✅ - Completar sprint stats (já estava implementado)
+- **T008** ✅ - Adicionar transações SQL em operações compostas
+- **T009** ✅ - Validar ranges de prioridade/severidade (0-9)
+- **T011** ✅ - Adicionar alias `aud` para comando audit
+- **T012** ✅ - Validar SQLite binds (funções helper criadas)
 
 ---
 

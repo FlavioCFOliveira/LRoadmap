@@ -269,16 +269,34 @@ pub fn addTaskToSprint(allocator: std.mem.Allocator, sprint_id: i64, task_id: i6
     };
     defer allocator.free(now);
 
+    // Begin transaction
+    conn.beginTransaction() catch {
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to begin transaction");
+    };
+
     // Add task to sprint
     queries.addTaskToSprint(conn, sprint_id, task_id, now) catch {
+        conn.rollback() catch {};
         return json.errorResponse(allocator, "DB_ERROR", "Failed to add task to sprint");
     };
 
     // Update task status to SPRINT as per spec
-    try queries.updateTaskStatus(conn, task_id, .SPRINT);
+    queries.updateTaskStatus(conn, task_id, .SPRINT) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to update task status");
+    };
 
     // Log operation
-    queries.logOperation(conn, "SPRINT_ADD_TASK", "sprint", sprint_id, now) catch {};
+    queries.logOperation(conn, "SPRINT_ADD_TASK", "sprint", sprint_id, now) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+    };
+
+    // Commit transaction
+    conn.commit() catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to commit transaction");
+    };
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"task_id\":{d},\"added_at\":\"{s}\"}}", .{
@@ -312,16 +330,36 @@ pub fn removeTaskFromSprint(allocator: std.mem.Allocator, task_id: i64) ![]const
     // Get sprint ID before removing task for audit
     const maybe_sprint_id = try queries.getSprintIdByTaskId(conn, task_id);
 
+    // Begin transaction
+    conn.beginTransaction() catch {
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to begin transaction");
+    };
+
     // Remove task from sprint
-    try queries.removeTaskFromSprint(conn, task_id);
+    queries.removeTaskFromSprint(conn, task_id) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to remove task from sprint");
+    };
 
     // Return task to BACKLOG state as per spec
-    try queries.updateTaskStatus(conn, task_id, .BACKLOG);
+    queries.updateTaskStatus(conn, task_id, .BACKLOG) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to update task status");
+    };
 
     // Log operation
     if (maybe_sprint_id) |sprint_id| {
-        try queries.logOperation(conn, "SPRINT_REMOVE_TASK", "sprint", sprint_id, now);
+        queries.logOperation(conn, "SPRINT_REMOVE_TASK", "sprint", sprint_id, now) catch {
+            conn.rollback() catch {};
+            return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+        };
     }
+
+    // Commit transaction
+    conn.commit() catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to commit transaction");
+    };
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"task_id\":{d},\"removed_at\":\"{s}\"}}", .{ task_id, now });
@@ -551,12 +589,29 @@ pub fn moveTaskBetweenSprints(allocator: std.mem.Allocator, task_id: i64, new_sp
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    try queries.moveTaskBetweenSprints(conn, task_id, new_sprint_id);
-
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "SPRINT_MOVE_TASK", "sprint", new_sprint_id, now);
+    // Begin transaction
+    conn.beginTransaction() catch {
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to begin transaction");
+    };
+
+    queries.moveTaskBetweenSprints(conn, task_id, new_sprint_id) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to move task between sprints");
+    };
+
+    queries.logOperation(conn, "SPRINT_MOVE_TASK", "sprint", new_sprint_id, now) catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to log operation");
+    };
+
+    // Commit transaction
+    conn.commit() catch {
+        conn.rollback() catch {};
+        return json.errorResponse(allocator, "DB_ERROR", "Failed to commit transaction");
+    };
 
     const response = try std.fmt.allocPrint(allocator, "{{\"task_id\":{d},\"new_sprint_id\":{d},\"moved_at\":\"{s}\"}}", .{ task_id, new_sprint_id, now });
     defer allocator.free(response);

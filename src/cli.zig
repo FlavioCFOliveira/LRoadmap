@@ -125,7 +125,7 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try handleTaskCommand(allocator, subargs);
     } else if (std.mem.eql(u8, cmd, "sprint")) {
         try handleSprintCommand(allocator, subargs);
-    } else if (std.mem.eql(u8, cmd, "audit")) {
+    } else if (std.mem.eql(u8, cmd, "audit") or std.mem.eql(u8, cmd, "aud")) {
         try handleAuditCommand(allocator, subargs);
     } else {
         const exit_code = printError(allocator, "UNKNOWN_COMMAND", try std.fmt.allocPrint(allocator, "Unknown command: {s}", .{cmd}));
@@ -328,35 +328,17 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
             std.process.exit(exit_code);
         };
 
-        var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer {
-            for (results_list.items) |r| allocator.free(r);
-            results_list.deinit(allocator);
-        }
-
-        for (ids) |id| {
-            const res = task.changeTaskStatus(allocator, id, status) catch |err| {
-                const err_json = try json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to update task {d} (error: {any})", .{ id, err }));
-                try results_list.append(allocator, err_json);
-                continue;
+        const res = task.changeTaskStatus(allocator, ids, status) catch |err| {
+            const err_json = json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to update tasks (error: {any})", .{err})) catch |e| {
+                printStderr("Critical error: {any}\n", .{e});
+                std.process.exit(ExitCode.FAILURE);
             };
-            try results_list.append(allocator, res);
-        }
-
-        const final_json = try buildBulkResponse(allocator, results_list.items);
-        defer allocator.free(final_json);
-        // Check if any result is an error
-        var has_error = false;
-        for (results_list.items) |res| {
-            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
-                has_error = true;
-                break;
-            }
-        }
-        printStdout("{s}\n", .{final_json});
-        if (has_error) {
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
             std.process.exit(ExitCode.NOT_FOUND);
-        }
+        };
+        defer allocator.free(res);
+        printStdout("{s}\n", .{res});
     } else if (std.mem.eql(u8, subcmd, "prio") or std.mem.eql(u8, subcmd, "priority")) {
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or priority value", "task");
@@ -378,39 +360,26 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
 
         if (priority < 0 or priority > 9) {
-            const exit_code = printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
-            std.process.exit(exit_code);
-        }
-
-        var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer {
-            for (results_list.items) |r| allocator.free(r);
-            results_list.deinit(allocator);
-        }
-
-        for (ids) |id| {
-            const res = task.setPriority(allocator, id, priority) catch |err| {
-                const err_json = try json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to set priority for task {d} (error: {any})", .{ id, err }));
-                try results_list.append(allocator, err_json);
-                continue;
+            const err_json = json.errorResponse(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9") catch {
+                printStderr("Priority must be between 0 and 9\n", .{});
+                std.process.exit(ExitCode.INVALID_DATA);
             };
-            try results_list.append(allocator, res);
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
+            std.process.exit(ExitCode.INVALID_DATA);
         }
 
-        const final_json = try buildBulkResponse(allocator, results_list.items);
-        defer allocator.free(final_json);
-        // Check if any result is an error
-        var has_error = false;
-        for (results_list.items) |res| {
-            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
-                has_error = true;
-                break;
-            }
-        }
-        printStdout("{s}\n", .{final_json});
-        if (has_error) {
+        const res = task.setPriority(allocator, ids, priority) catch |err| {
+            const err_json = json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to set priority for tasks (error: {any})", .{err})) catch |e| {
+                printStderr("Critical error: {any}\n", .{e});
+                std.process.exit(ExitCode.FAILURE);
+            };
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
             std.process.exit(ExitCode.NOT_FOUND);
-        }
+        };
+        defer allocator.free(res);
+        printStdout("{s}\n", .{res});
     } else if (std.mem.eql(u8, subcmd, "sev") or std.mem.eql(u8, subcmd, "severity")) {
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or severity value", "task");
@@ -432,39 +401,26 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
 
         if (severity < 0 or severity > 9) {
-            const exit_code = printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
-            std.process.exit(exit_code);
-        }
-
-        var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer {
-            for (results_list.items) |r| allocator.free(r);
-            results_list.deinit(allocator);
-        }
-
-        for (ids) |id| {
-            const res = task.setSeverity(allocator, id, severity) catch |err| {
-                const err_json = try json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to set severity for task {d} (error: {any})", .{ id, err }));
-                try results_list.append(allocator, err_json);
-                continue;
+            const err_json = json.errorResponse(allocator, "INVALID_SEVERITY", "Severity must be between 0 and 9") catch {
+                printStderr("Severity must be between 0 and 9\n", .{});
+                std.process.exit(ExitCode.INVALID_DATA);
             };
-            try results_list.append(allocator, res);
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
+            std.process.exit(ExitCode.INVALID_DATA);
         }
 
-        const final_json = try buildBulkResponse(allocator, results_list.items);
-        defer allocator.free(final_json);
-        // Check if any result is an error
-        var has_error = false;
-        for (results_list.items) |res| {
-            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
-                has_error = true;
-                break;
-            }
-        }
-        printStdout("{s}\n", .{final_json});
-        if (has_error) {
+        const res = task.setSeverity(allocator, ids, severity) catch |err| {
+            const err_json = json.errorResponse(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to set severity for tasks (error: {any})", .{err})) catch |e| {
+                printStderr("Critical error: {any}\n", .{e});
+                std.process.exit(ExitCode.FAILURE);
+            };
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
             std.process.exit(ExitCode.NOT_FOUND);
-        }
+        };
+        defer allocator.free(res);
+        printStdout("{s}\n", .{res});
     } else if (std.mem.eql(u8, subcmd, "edit")) {
         try handleTaskEdit(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "delete") or std.mem.eql(u8, subcmd, "rm")) {
@@ -478,35 +434,17 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
         defer allocator.free(ids);
 
-        var results_list: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer {
-            for (results_list.items) |r| allocator.free(r);
-            results_list.deinit(allocator);
-        }
-
-        for (ids) |id| {
-            const res = task.deleteTask(allocator, id) catch |err| {
-                const err_json = try json.errorResponse(allocator, "DELETE_FAILED", try std.fmt.allocPrint(allocator, "Failed to delete task {d} (error: {any})", .{ id, err }));
-                try results_list.append(allocator, err_json);
-                continue;
+        const res = task.deleteTask(allocator, ids) catch |err| {
+            const err_json = json.errorResponse(allocator, "DELETE_FAILED", try std.fmt.allocPrint(allocator, "Failed to delete tasks (error: {any})", .{err})) catch |e| {
+                printStderr("Critical error: {any}\n", .{e});
+                std.process.exit(ExitCode.FAILURE);
             };
-            try results_list.append(allocator, res);
-        }
-
-        const final_json = try buildBulkResponse(allocator, results_list.items);
-        defer allocator.free(final_json);
-        // Check if any result is an error
-        var has_error = false;
-        for (results_list.items) |res| {
-            if (std.mem.indexOf(u8, res, "\"code\":") != null) {
-                has_error = true;
-                break;
-            }
-        }
-        printStdout("{s}\n", .{final_json});
-        if (has_error) {
+            defer allocator.free(err_json);
+            printStderr("{s}\n", .{err_json});
             std.process.exit(ExitCode.NOT_FOUND);
-        }
+        };
+        defer allocator.free(res);
+        printStdout("{s}\n", .{res});
     } else {
         printStdout("Unknown task subcommand: {s}\n", .{subcmd});
         printStdout("Available: list, get, add, status, prio, sev, edit, delete\n", .{});
@@ -535,8 +473,13 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     std.process.exit(exit_code);
                 };
                 if (priority < 0 or priority > 9) {
-                    const exit_code = printError(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9");
-                    std.process.exit(exit_code);
+                    const err_json = json.errorResponse(allocator, "INVALID_PRIORITY", "Priority must be between 0 and 9") catch {
+                        printStderr("Priority must be between 0 and 9\n", .{});
+                        std.process.exit(ExitCode.INVALID_DATA);
+                    };
+                    defer allocator.free(err_json);
+                    printStderr("{s}\n", .{err_json});
+                    std.process.exit(ExitCode.INVALID_DATA);
                 }
             } else {
                 const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for priority flag");
@@ -550,8 +493,13 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
                     std.process.exit(exit_code);
                 };
                 if (severity < 0 or severity > 9) {
-                    const exit_code = printError(allocator, "INVALID_INPUT", "Severity must be between 0 and 9");
-                    std.process.exit(exit_code);
+                    const err_json = json.errorResponse(allocator, "INVALID_SEVERITY", "Severity must be between 0 and 9") catch {
+                        printStderr("Severity must be between 0 and 9\n", .{});
+                        std.process.exit(ExitCode.INVALID_DATA);
+                    };
+                    defer allocator.free(err_json);
+                    printStderr("{s}\n", .{err_json});
+                    std.process.exit(ExitCode.INVALID_DATA);
                 }
             } else {
                 const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for severity flag");

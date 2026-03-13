@@ -10,6 +10,28 @@ const SprintStatus = @import("../models/sprint.zig").SprintStatus;
 const AuditEntry = @import("../models/audit.zig").AuditEntry;
 const AuditStats = @import("../models/audit.zig").AuditStats;
 
+// ============== BIND HELPER FUNCTIONS ==============
+
+fn bindInt(stmt: ?*c.sqlite3_stmt, idx: c_int, value: c_int) !void {
+    const rc = c.sqlite3_bind_int(stmt, idx, value);
+    if (rc != c.SQLITE_OK) return error.BindFailed;
+}
+
+fn bindInt64(stmt: ?*c.sqlite3_stmt, idx: c_int, value: i64) !void {
+    const rc = c.sqlite3_bind_int64(stmt, idx, value);
+    if (rc != c.SQLITE_OK) return error.BindFailed;
+}
+
+fn bindText(stmt: ?*c.sqlite3_stmt, idx: c_int, text: []const u8) !void {
+    const rc = c.sqlite3_bind_text(stmt, idx, text.ptr, @intCast(text.len), c.SQLITE_STATIC);
+    if (rc != c.SQLITE_OK) return error.BindFailed;
+}
+
+fn bindNull(stmt: ?*c.sqlite3_stmt, idx: c_int) !void {
+    const rc = c.sqlite3_bind_null(stmt, idx);
+    if (rc != c.SQLITE_OK) return error.BindFailed;
+}
+
 // ============== TASK QUERIES ==============
 
 pub fn insertTask(conn: Connection, task: Task) !i64 {
@@ -20,19 +42,19 @@ pub fn insertTask(conn: Connection, task: Task) !i64 {
     if (rc != c.SQLITE_OK) return error.PrepareFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    _ = c.sqlite3_bind_int(stmt, 1, task.priority);
-    _ = c.sqlite3_bind_int(stmt, 2, task.severity);
-    _ = c.sqlite3_bind_text(stmt, 3, task.description.ptr, @intCast(task.description.len), c.SQLITE_STATIC);
+    try bindInt(stmt, 1, task.priority);
+    try bindInt(stmt, 2, task.severity);
+    try bindText(stmt, 3, task.description);
 
     if (task.specialists) |s| {
-        _ = c.sqlite3_bind_text(stmt, 4, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        try bindText(stmt, 4, s);
     } else {
-        _ = c.sqlite3_bind_null(stmt, 4);
+        try bindNull(stmt, 4);
     }
 
-    _ = c.sqlite3_bind_text(stmt, 5, task.action.ptr, @intCast(task.action.len), c.SQLITE_STATIC);
-    _ = c.sqlite3_bind_text(stmt, 6, task.expected_result.ptr, @intCast(task.expected_result.len), c.SQLITE_STATIC);
-    _ = c.sqlite3_bind_text(stmt, 7, task.created_at.ptr, @intCast(task.created_at.len), c.SQLITE_STATIC);
+    try bindText(stmt, 5, task.action);
+    try bindText(stmt, 6, task.expected_result);
+    try bindText(stmt, 7, task.created_at);
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
@@ -48,8 +70,8 @@ pub fn updateTaskStatus(conn: Connection, id: i64, new_status: TaskStatus) !void
     if (rc != c.SQLITE_OK) return error.PrepareFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    _ = c.sqlite3_bind_text(stmt, 1, status_str.ptr, @intCast(status_str.len), c.SQLITE_STATIC);
-    _ = c.sqlite3_bind_int64(stmt, 2, id);
+    try bindText(stmt, 1, status_str);
+    try bindInt64(stmt, 2, id);
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
@@ -62,8 +84,8 @@ pub fn updateTaskPriority(conn: Connection, id: i64, priority: i32) !void {
     if (rc != c.SQLITE_OK) return error.PrepareFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    _ = c.sqlite3_bind_int(stmt, 1, priority);
-    _ = c.sqlite3_bind_int64(stmt, 2, id);
+    try bindInt(stmt, 1, priority);
+    try bindInt64(stmt, 2, id);
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
@@ -76,8 +98,8 @@ pub fn updateTaskSeverity(conn: Connection, id: i64, severity: i32) !void {
     if (rc != c.SQLITE_OK) return error.PrepareFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    _ = c.sqlite3_bind_int(stmt, 1, severity);
-    _ = c.sqlite3_bind_int64(stmt, 2, id);
+    try bindInt(stmt, 1, severity);
+    try bindInt64(stmt, 2, id);
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
@@ -91,11 +113,11 @@ pub fn updateTaskCompletedAt(conn: Connection, id: i64, completed_at: ?[]const u
     defer _ = c.sqlite3_finalize(stmt);
 
     if (completed_at) |ca| {
-        _ = c.sqlite3_bind_text(stmt, 1, ca.ptr, @intCast(ca.len), c.SQLITE_STATIC);
+        try bindText(stmt, 1, ca);
     } else {
-        _ = c.sqlite3_bind_null(stmt, 1);
+        try bindNull(stmt, 1);
     }
-    _ = c.sqlite3_bind_int64(stmt, 2, id);
+    try bindInt64(stmt, 2, id);
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
@@ -300,6 +322,210 @@ pub fn deleteTask(conn: Connection, id: i64) !void {
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+// ============== BULK TASK QUERIES ==============
+
+/// Check which task IDs exist in the database
+pub fn filterExistingTaskIds(allocator: std.mem.Allocator, conn: Connection, ids: []const i64) ![]i64 {
+    if (ids.len == 0) return &[_]i64{};
+
+    // Build IN clause with placeholders
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const sql = try std.fmt.allocPrint(allocator, "SELECT id FROM tasks WHERE id IN ({s})", .{placeholders.items});
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    // Bind all IDs
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 1), id);
+    }
+
+    var list: std.ArrayListUnmanaged(i64) = .empty;
+    errdefer list.deinit(allocator);
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        try list.append(allocator, c.sqlite3_column_int64(stmt, 0));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+/// Update status for multiple tasks at once
+pub fn updateTaskStatusBulk(allocator: std.mem.Allocator, conn: Connection, ids: []const i64, new_status: TaskStatus) !usize {
+    if (ids.len == 0) return 0;
+
+    // Build IN clause with placeholders
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const status_str = new_status.toString();
+    const sql = try std.fmt.allocPrint(allocator, "UPDATE tasks SET status = ? WHERE id IN ({s})", .{ placeholders.items });
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    // Bind status first (parameter 1)
+    _ = c.sqlite3_bind_text(stmt, 1, status_str.ptr, @intCast(status_str.len), c.SQLITE_STATIC);
+
+    // Bind all IDs starting from parameter 2
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 2), id);
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+
+    return @intCast(c.sqlite3_changes(@ptrCast(conn.db)));
+}
+
+/// Update priority for multiple tasks at once
+pub fn updateTaskPriorityBulk(allocator: std.mem.Allocator, conn: Connection, ids: []const i64, priority: i32) !usize {
+    if (ids.len == 0) return 0;
+
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const sql = try std.fmt.allocPrint(allocator, "UPDATE tasks SET priority = ? WHERE id IN ({s})", .{ placeholders.items });
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int(stmt, 1, priority);
+
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 2), id);
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+
+    return @intCast(c.sqlite3_changes(@ptrCast(conn.db)));
+}
+
+/// Update severity for multiple tasks at once
+pub fn updateTaskSeverityBulk(allocator: std.mem.Allocator, conn: Connection, ids: []const i64, severity: i32) !usize {
+    if (ids.len == 0) return 0;
+
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const sql = try std.fmt.allocPrint(allocator, "UPDATE tasks SET severity = ? WHERE id IN ({s})", .{ placeholders.items });
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int(stmt, 1, severity);
+
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 2), id);
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+
+    return @intCast(c.sqlite3_changes(@ptrCast(conn.db)));
+}
+
+/// Update completed_at for multiple tasks at once
+pub fn updateTaskCompletedAtBulk(allocator: std.mem.Allocator, conn: Connection, ids: []const i64, completed_at: ?[]const u8) !usize {
+    if (ids.len == 0) return 0;
+
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const sql = try std.fmt.allocPrint(allocator, "UPDATE tasks SET completed_at = ? WHERE id IN ({s})", .{ placeholders.items });
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (completed_at) |ca| {
+        _ = c.sqlite3_bind_text(stmt, 1, ca.ptr, @intCast(ca.len), c.SQLITE_STATIC);
+    } else {
+        _ = c.sqlite3_bind_null(stmt, 1);
+    }
+
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 2), id);
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+
+    return @intCast(c.sqlite3_changes(@ptrCast(conn.db)));
+}
+
+/// Delete multiple tasks at once
+pub fn deleteTaskBulk(allocator: std.mem.Allocator, conn: Connection, ids: []const i64) !usize {
+    if (ids.len == 0) return 0;
+
+    var placeholders: std.ArrayListUnmanaged(u8) = .empty;
+    defer placeholders.deinit(allocator);
+
+    for (ids, 0..) |_, i| {
+        if (i > 0) try placeholders.append(allocator, ',');
+        try placeholders.appendSlice(allocator, "?");
+    }
+
+    const sql = try std.fmt.allocPrint(allocator, "DELETE FROM tasks WHERE id IN ({s})", .{ placeholders.items });
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    for (ids, 0..) |id, i| {
+        _ = c.sqlite3_bind_int64(stmt, @intCast(i + 1), id);
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+
+    return @intCast(c.sqlite3_changes(@ptrCast(conn.db)));
 }
 
 // ============== SPRINT QUERIES ==============

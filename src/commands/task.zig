@@ -160,8 +160,8 @@ pub fn getTask(allocator: std.mem.Allocator, task_id: i64) ![]const u8 {
     return json.success(allocator, task_json);
 }
 
-/// Changes the status of a task
-pub fn changeTaskStatus(allocator: std.mem.Allocator, task_id: i64, new_status: TaskStatus) ![]const u8 {
+/// Changes the status of multiple tasks
+pub fn changeTaskStatus(allocator: std.mem.Allocator, ids: []const i64, new_status: TaskStatus) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -173,45 +173,79 @@ pub fn changeTaskStatus(allocator: std.mem.Allocator, task_id: i64, new_status: 
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    var task_obj = queries.getTaskById(allocator, conn, task_id) catch |err| {
-        if (err == error.TaskNotFound) {
-            const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":[{d}]}}", .{ current, task_id });
-            defer allocator.free(details);
-            const msg = try std.fmt.allocPrint(allocator, "Task with ID {d} not found in roadmap '{s}'", .{ task_id, current });
-            defer allocator.free(msg);
-            return json.errorResponseWithDetails(allocator, "TASK_NOT_FOUND", msg, details);
+    // Verify all tasks exist and check valid transitions
+    const now = try time.nowUtc(allocator);
+    defer allocator.free(now);
+
+    const existing_ids = try queries.filterExistingTaskIds(allocator, conn, ids);
+    defer allocator.free(existing_ids);
+
+    if (existing_ids.len == 0) {
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, ids });
+        defer allocator.free(details);
+        return json.errorResponseWithDetails(allocator, "TASKS_NOT_FOUND", "No tasks found with the provided IDs", details);
+    }
+
+    // Check for missing IDs
+    if (existing_ids.len < ids.len) {
+        var missing: std.ArrayListUnmanaged(i64) = .empty;
+        defer missing.deinit(allocator);
+
+        for (ids) |id| {
+            var found = false;
+            for (existing_ids) |existing| {
+                if (id == existing) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) try missing.append(allocator, id);
         }
-        return err;
-    };
-    defer task_obj.deinit(allocator);
 
-    if (!task_obj.status.isValidTransition(new_status)) {
-        return json.errorResponse(allocator, "INVALID_STATUS", "Invalid status transition");
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any},\"found\":{d},\"requested\":{d}}}", .{ current, missing.items, existing_ids.len, ids.len });
+        defer allocator.free(details);
+        const msg = try std.fmt.allocPrint(allocator, "Only {d} of {d} tasks found in roadmap '{s}'", .{ existing_ids.len, ids.len, current });
+        defer allocator.free(msg);
+        return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
     }
 
-    try queries.updateTaskStatus(conn, task_id, new_status);
+    // Update status for all tasks
+    const updated_count = try queries.updateTaskStatusBulk(allocator, conn, ids, new_status);
 
-    const now = try time.nowUtc(allocator);
-    defer allocator.free(now);
-
+    // Update completed_at based on status
     if (new_status == .COMPLETED) {
-        try queries.updateTaskCompletedAt(conn, task_id, now);
-    } else if (task_obj.status == .COMPLETED) {
-        try queries.updateTaskCompletedAt(conn, task_id, null);
+        _ = try queries.updateTaskCompletedAtBulk(allocator, conn, ids, now);
+    } else {
+        // If moving away from COMPLETED, clear completed_at
+        _ = try queries.updateTaskCompletedAtBulk(allocator, conn, ids, null);
     }
 
-    try queries.logOperation(conn, "TASK_STATUS_CHANGE", "task", task_id, now);
+    // Log operation for each task
+    for (ids) |id| {
+        try queries.logOperation(conn, "TASK_STATUS_CHANGE", "task", id, now);
+    }
 
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"{s}\",\"new_status\":\"{s}\",\"changed_at\":\"{s}\"}}", .{
-        task_id, task_obj.status.toString(), new_status.toString(), now,
+    // Build response
+    var ids_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer ids_json.deinit(allocator);
+
+    for (ids, 0..) |id, i| {
+        if (i > 0) try ids_json.append(allocator, ',');
+        const id_str = try std.fmt.allocPrint(allocator, "{d}", .{id});
+        defer allocator.free(id_str);
+        try ids_json.appendSlice(allocator, id_str);
+    }
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"updated\":[{s}],\"count\":{d},\"new_status\":\"{s}\",\"changed_at\":\"{s}\"}}", .{
+        ids_json.items, updated_count, new_status.toString(), now,
     });
     defer allocator.free(response);
 
     return json.success(allocator, response);
 }
 
-/// Sets the priority of a task
-pub fn setPriority(allocator: std.mem.Allocator, task_id: i64, priority: i32) ![]const u8 {
+/// Sets the priority of multiple tasks
+pub fn setPriority(allocator: std.mem.Allocator, ids: []const i64, priority: i32) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -223,27 +257,70 @@ pub fn setPriority(allocator: std.mem.Allocator, task_id: i64, priority: i32) ![
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    // Verify task exists
-    var task_obj = try queries.getTaskById(allocator, conn, task_id);
-    task_obj.deinit(allocator);
-
-    try queries.updateTaskPriority(conn, task_id, priority);
-
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "TASK_PRIORITY_CHANGE", "task", task_id, now);
+    // Verify all tasks exist
+    const existing_ids = try queries.filterExistingTaskIds(allocator, conn, ids);
+    defer allocator.free(existing_ids);
 
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"new_priority\":{d},\"changed_at\":\"{s}\"}}", .{
-        task_id, priority, now,
+    if (existing_ids.len == 0) {
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, ids });
+        defer allocator.free(details);
+        return json.errorResponseWithDetails(allocator, "TASKS_NOT_FOUND", "No tasks found with the provided IDs", details);
+    }
+
+    if (existing_ids.len < ids.len) {
+        var missing: std.ArrayListUnmanaged(i64) = .empty;
+        defer missing.deinit(allocator);
+
+        for (ids) |id| {
+            var found = false;
+            for (existing_ids) |existing| {
+                if (id == existing) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) try missing.append(allocator, id);
+        }
+
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, missing.items });
+        defer allocator.free(details);
+        const msg = try std.fmt.allocPrint(allocator, "Only {d} of {d} tasks found", .{ existing_ids.len, ids.len });
+        defer allocator.free(msg);
+        return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
+    }
+
+    // Update priority for all tasks
+    const updated_count = try queries.updateTaskPriorityBulk(allocator, conn, ids, priority);
+
+    // Log operation for each task
+    for (ids) |id| {
+        try queries.logOperation(conn, "TASK_PRIORITY_CHANGE", "task", id, now);
+    }
+
+    // Build response
+    var ids_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer ids_json.deinit(allocator);
+
+    for (ids, 0..) |id, i| {
+        if (i > 0) try ids_json.append(allocator, ',');
+        const id_str = try std.fmt.allocPrint(allocator, "{d}", .{id});
+        defer allocator.free(id_str);
+        try ids_json.appendSlice(allocator, id_str);
+    }
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"updated\":[{s}],\"count\":{d},\"new_priority\":{d},\"changed_at\":\"{s}\"}}", .{
+        ids_json.items, updated_count, priority, now,
     });
     defer allocator.free(response);
 
     return json.success(allocator, response);
 }
 
-/// Sets the severity of a task
-pub fn setSeverity(allocator: std.mem.Allocator, task_id: i64, severity: i32) ![]const u8 {
+/// Sets the severity of multiple tasks
+pub fn setSeverity(allocator: std.mem.Allocator, ids: []const i64, severity: i32) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -255,19 +332,62 @@ pub fn setSeverity(allocator: std.mem.Allocator, task_id: i64, severity: i32) ![
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    // Verify task exists
-    var task_obj = try queries.getTaskById(allocator, conn, task_id);
-    task_obj.deinit(allocator);
-
-    try queries.updateTaskSeverity(conn, task_id, severity);
-
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "TASK_SEVERITY_CHANGE", "task", task_id, now);
+    // Verify all tasks exist
+    const existing_ids = try queries.filterExistingTaskIds(allocator, conn, ids);
+    defer allocator.free(existing_ids);
 
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"new_severity\":{d},\"changed_at\":\"{s}\"}}", .{
-        task_id, severity, now,
+    if (existing_ids.len == 0) {
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, ids });
+        defer allocator.free(details);
+        return json.errorResponseWithDetails(allocator, "TASKS_NOT_FOUND", "No tasks found with the provided IDs", details);
+    }
+
+    if (existing_ids.len < ids.len) {
+        var missing: std.ArrayListUnmanaged(i64) = .empty;
+        defer missing.deinit(allocator);
+
+        for (ids) |id| {
+            var found = false;
+            for (existing_ids) |existing| {
+                if (id == existing) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) try missing.append(allocator, id);
+        }
+
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, missing.items });
+        defer allocator.free(details);
+        const msg = try std.fmt.allocPrint(allocator, "Only {d} of {d} tasks found", .{ existing_ids.len, ids.len });
+        defer allocator.free(msg);
+        return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
+    }
+
+    // Update severity for all tasks
+    const updated_count = try queries.updateTaskSeverityBulk(allocator, conn, ids, severity);
+
+    // Log operation for each task
+    for (ids) |id| {
+        try queries.logOperation(conn, "TASK_SEVERITY_CHANGE", "task", id, now);
+    }
+
+    // Build response
+    var ids_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer ids_json.deinit(allocator);
+
+    for (ids, 0..) |id, i| {
+        if (i > 0) try ids_json.append(allocator, ',');
+        const id_str = try std.fmt.allocPrint(allocator, "{d}", .{id});
+        defer allocator.free(id_str);
+        try ids_json.appendSlice(allocator, id_str);
+    }
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"updated\":[{s}],\"count\":{d},\"new_severity\":{d},\"changed_at\":\"{s}\"}}", .{
+        ids_json.items, updated_count, severity, now,
     });
     defer allocator.free(response);
 
@@ -304,8 +424,8 @@ pub fn editTask(allocator: std.mem.Allocator, task_id: i64, updates: Task.TaskUp
     return json.success(allocator, response);
 }
 
-/// Deletes a task
-pub fn deleteTask(allocator: std.mem.Allocator, task_id: i64) ![]const u8 {
+/// Deletes multiple tasks
+pub fn deleteTask(allocator: std.mem.Allocator, ids: []const i64) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -320,10 +440,60 @@ pub fn deleteTask(allocator: std.mem.Allocator, task_id: i64) ![]const u8 {
     const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
-    try queries.logOperation(conn, "TASK_DELETE", "task", task_id, now);
-    try queries.deleteTask(conn, task_id);
+    // Verify all tasks exist
+    const existing_ids = try queries.filterExistingTaskIds(allocator, conn, ids);
+    defer allocator.free(existing_ids);
 
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"deleted_at\":\"{s}\"}}", .{ task_id, now });
+    if (existing_ids.len == 0) {
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, ids });
+        defer allocator.free(details);
+        return json.errorResponseWithDetails(allocator, "TASKS_NOT_FOUND", "No tasks found with the provided IDs", details);
+    }
+
+    if (existing_ids.len < ids.len) {
+        var missing: std.ArrayListUnmanaged(i64) = .empty;
+        defer missing.deinit(allocator);
+
+        for (ids) |id| {
+            var found = false;
+            for (existing_ids) |existing| {
+                if (id == existing) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) try missing.append(allocator, id);
+        }
+
+        const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"missing_ids\":{any}}}", .{ current, missing.items });
+        defer allocator.free(details);
+        const msg = try std.fmt.allocPrint(allocator, "Only {d} of {d} tasks found", .{ existing_ids.len, ids.len });
+        defer allocator.free(msg);
+        return json.errorResponseWithDetails(allocator, "SOME_TASKS_NOT_FOUND", msg, details);
+    }
+
+    // Log operation for each task before deletion
+    for (ids) |id| {
+        try queries.logOperation(conn, "TASK_DELETE", "task", id, now);
+    }
+
+    // Delete all tasks
+    const deleted_count = try queries.deleteTaskBulk(allocator, conn, ids);
+
+    // Build response
+    var ids_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer ids_json.deinit(allocator);
+
+    for (ids, 0..) |id, i| {
+        if (i > 0) try ids_json.append(allocator, ',');
+        const id_str = try std.fmt.allocPrint(allocator, "{d}", .{id});
+        defer allocator.free(id_str);
+        try ids_json.appendSlice(allocator, id_str);
+    }
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"deleted\":[{s}],\"count\":{d},\"deleted_at\":\"{s}\"}}", .{
+        ids_json.items, deleted_count, now,
+    });
     defer allocator.free(response);
 
     return json.success(allocator, response);
