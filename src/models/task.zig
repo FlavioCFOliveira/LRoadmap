@@ -129,87 +129,48 @@ pub const Task = struct {
         self.specialists = try allocator.dupe(u8, specialists);
     }
 
-    /// Formats the task as a JSON string (simplified version without ArrayList)
+    /// Task update structure
+    pub const TaskUpdate = struct {
+        priority: ?i32 = null,
+        severity: ?i32 = null,
+        description: ?[]const u8 = null,
+        specialists: ?[]const u8 = null,
+        action: ?[]const u8 = null,
+        expected_result: ?[]const u8 = null,
+    };
+
+    /// Formats the task as a JSON string
     pub fn toJson(self: Task, allocator: std.mem.Allocator) ![]const u8 {
-        const desc_escaped = try escapeJsonString(allocator, self.description);
+        const json = @import("../utils/json.zig");
+        const desc_escaped = try json.escapeString(allocator, self.description);
         defer allocator.free(desc_escaped);
 
-        const action_escaped = try escapeJsonString(allocator, self.action);
+        const action_escaped = try json.escapeString(allocator, self.action);
         defer allocator.free(action_escaped);
 
-        const exp_escaped = try escapeJsonString(allocator, self.expected_result);
+        const exp_escaped = try json.escapeString(allocator, self.expected_result);
         defer allocator.free(exp_escaped);
 
-        const created_escaped = try escapeJsonString(allocator, self.created_at);
+        const created_escaped = try json.escapeString(allocator, self.created_at);
         defer allocator.free(created_escaped);
 
-        // Build simple JSON string
+        const completed_val = if (self.completed_at) |ca| try json.escapeString(allocator, ca) else try allocator.dupe(u8, "null");
+        defer allocator.free(completed_val);
+
         if (self.specialists) |s| {
-            const spec_escaped = try escapeJsonString(allocator, s);
+            const spec_escaped = try json.escapeString(allocator, s);
             defer allocator.free(spec_escaped);
 
             return std.fmt.allocPrint(allocator,
-                "{{\"id\":{d},\"priority\":{d},\"severity\":{d},\"status\":\"{s}\",\"description\":{s},\"specialists\":{s},\"action\":{s},\"expected_result\":{s},\"created_at\":{s},\"completed_at\":null}}",
-                .{ self.id, self.priority, self.severity, self.status.toString(), desc_escaped, spec_escaped, action_escaped, exp_escaped, created_escaped });
+                \\{{"id":{d},"priority":{d},"severity":{d},"status":"{s}","description":{s},"specialists":{s},"action":{s},"expected_result":{s},"created_at":{s},"completed_at":{s}}}
+            , .{ self.id, self.priority, self.severity, self.status.toString(), desc_escaped, spec_escaped, action_escaped, exp_escaped, created_escaped, completed_val });
         } else {
             return std.fmt.allocPrint(allocator,
-                "{{\"id\":{d},\"priority\":{d},\"severity\":{d},\"status\":\"{s}\",\"description\":{s},\"specialists\":null,\"action\":{s},\"expected_result\":{s},\"created_at\":{s},\"completed_at\":null}}",
-                .{ self.id, self.priority, self.severity, self.status.toString(), desc_escaped, action_escaped, exp_escaped, created_escaped });
+                \\{{"id":{d},"priority":{d},"severity":{d},"status":"{s}","description":{s},"specialists":null,"action":{s},"expected_result":{s},"created_at":{s},"completed_at":{s}}}
+            , .{ self.id, self.priority, self.severity, self.status.toString(), desc_escaped, action_escaped, exp_escaped, created_escaped, completed_val });
         }
     }
 };
-
-/// Escapes a string for JSON output
-fn escapeJsonString(allocator: std.mem.Allocator, str: []const u8) ![]const u8 {
-    var escaped_len: usize = 2;
-    for (str) |c| {
-        switch (c) {
-            '"', '\\', '\n', '\r', '\t' => escaped_len += 2,
-            else => escaped_len += 1,
-        }
-    }
-
-    var result = try allocator.alloc(u8, escaped_len);
-    result[0] = '"';
-    var i: usize = 1;
-
-    for (str) |c| {
-        switch (c) {
-            '"' => {
-                result[i] = '\\';
-                result[i + 1] = '"';
-                i += 2;
-            },
-            '\\' => {
-                result[i] = '\\';
-                result[i + 1] = '\\';
-                i += 2;
-            },
-            '\n' => {
-                result[i] = '\\';
-                result[i + 1] = 'n';
-                i += 2;
-            },
-            '\r' => {
-                result[i] = '\\';
-                result[i + 1] = 'r';
-                i += 2;
-            },
-            '\t' => {
-                result[i] = '\\';
-                result[i + 1] = 't';
-                i += 2;
-            },
-            else => {
-                result[i] = c;
-                i += 1;
-            },
-        }
-    }
-    result[i] = '"';
-
-    return result;
-}
 
 // ============== TESTS ==============
 

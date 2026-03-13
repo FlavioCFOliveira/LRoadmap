@@ -3,3 +3,4 @@
 zig-out/
 zig-build/
 zig-test/
+.DS_Store

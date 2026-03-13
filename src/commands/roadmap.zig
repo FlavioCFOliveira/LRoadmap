@@ -93,7 +93,11 @@ pub fn createRoadmap(allocator: std.mem.Allocator, name: []const u8, force: bool
     // Check if exists
     if (path.fileExists(roadmap_path)) {
         if (!force) {
-            return json.errorResponse(allocator, "ROADMAP_EXISTS", "Roadmap already exists");
+            const details = try std.fmt.allocPrint(allocator, "{{\"roadmap_name\":\"{s}\",\"existing_path\":\"{s}\"}}", .{ name, roadmap_path });
+            defer allocator.free(details);
+            const msg = try std.fmt.allocPrint(allocator, "Roadmap '{s}' already exists at {s}", .{ name, roadmap_path });
+            defer allocator.free(msg);
+            return json.errorResponseWithDetails(allocator, "ROADMAP_EXISTS", msg, details);
         }
         // Remove existing file
         std.fs.cwd().deleteFile(roadmap_path) catch {
@@ -132,6 +136,11 @@ pub fn createRoadmap(allocator: std.mem.Allocator, name: []const u8, force: bool
 
 /// Removes a roadmap
 pub fn removeRoadmap(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    // Validate name to prevent path traversal
+    if (!isValidRoadmapName(name)) {
+        return json.errorResponse(allocator, "INVALID_INPUT", "Invalid roadmap name");
+    }
+
     // Get path
     const roadmap_path = path.getRoadmapPath(allocator, name) catch {
         return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to get roadmap path");
@@ -168,6 +177,11 @@ pub fn removeRoadmap(allocator: std.mem.Allocator, name: []const u8) ![]const u8
 
 /// Sets the default roadmap
 pub fn useRoadmap(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    // Validate name to prevent path traversal
+    if (!isValidRoadmapName(name)) {
+        return json.errorResponse(allocator, "INVALID_INPUT", "Invalid roadmap name");
+    }
+
     // Get path
     const roadmap_path = path.getRoadmapPath(allocator, name) catch {
         return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to get roadmap path");

@@ -45,7 +45,7 @@ pub fn addSprint(allocator: std.mem.Allocator, description: []const u8) ![]const
     };
 
     // Log operation
-    queries.logOperation(conn, "CREATE", "sprint", sprint_id, now) catch {};
+    queries.logOperation(conn, "SPRINT_CREATE", "sprint", sprint_id, now) catch {};
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"description\":\"{s}\",\"status\":\"PENDING\",\"created_at\":\"{s}\"}}", .{
@@ -82,12 +82,20 @@ pub fn openSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     defer conn.close(allocator);
 
     // Verify sprint exists and get current status
-    const current_status = getSprintStatus(conn, sprint_id) catch {
-        return json.errorResponse(allocator, "SPRINT_NOT_FOUND", "Sprint not found");
+    var sprint_obj = queries.getSprintById(allocator, conn, sprint_id) catch |err| {
+        if (err == error.SprintNotFound) {
+            const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"sprint_id\":{d}}}", .{ current, sprint_id });
+            defer allocator.free(details);
+            const msg = try std.fmt.allocPrint(allocator, "Sprint with ID {d} not found in roadmap '{s}'", .{ sprint_id, current });
+            defer allocator.free(msg);
+            return json.errorResponseWithDetails(allocator, "SPRINT_NOT_FOUND", msg, details);
+        }
+        return err;
     };
+    defer sprint_obj.deinit(allocator);
 
     // Validate transition (must be PENDING to OPEN)
-    if (current_status != .PENDING) {
+    if (sprint_obj.status != .PENDING) {
         return json.errorResponse(allocator, "INVALID_STATUS", "Sprint must be in PENDING status to open");
     }
 
@@ -97,16 +105,17 @@ pub fn openSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     };
     defer allocator.free(now);
 
-    // Update sprint status
+    // Update sprint status and started_at
     queries.updateSprintStatus(conn, sprint_id, .OPEN) catch {
         return json.errorResponse(allocator, "DB_ERROR", "Failed to update sprint status");
     };
+    queries.updateSprintStartedAt(conn, sprint_id, now) catch {};
 
     // Log operation
-    queries.logOperation(conn, "OPEN", "sprint", sprint_id, now) catch {};
+    queries.logOperation(conn, "SPRINT_START", "sprint", sprint_id, now) catch {};
 
     // Build response
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"PENDING\",\"new_status\":\"OPEN\",\"opened_at\":\"{s}\"}}", .{
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"PENDING\",\"new_status\":\"OPEN\",\"started_at\":\"{s}\"}}", .{
         sprint_id, now,
     });
     defer allocator.free(response);
@@ -140,12 +149,20 @@ pub fn closeSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     defer conn.close(allocator);
 
     // Verify sprint exists and get current status
-    const current_status = getSprintStatus(conn, sprint_id) catch {
-        return json.errorResponse(allocator, "SPRINT_NOT_FOUND", "Sprint not found");
+    var sprint_obj = queries.getSprintById(allocator, conn, sprint_id) catch |err| {
+        if (err == error.SprintNotFound) {
+            const details = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"sprint_id\":{d}}}", .{ current, sprint_id });
+            defer allocator.free(details);
+            const msg = try std.fmt.allocPrint(allocator, "Sprint with ID {d} not found in roadmap '{s}'", .{ sprint_id, current });
+            defer allocator.free(msg);
+            return json.errorResponseWithDetails(allocator, "SPRINT_NOT_FOUND", msg, details);
+        }
+        return err;
     };
+    defer sprint_obj.deinit(allocator);
 
     // Validate transition (must be OPEN to CLOSED)
-    if (current_status != .OPEN) {
+    if (sprint_obj.status != .OPEN) {
         return json.errorResponse(allocator, "INVALID_STATUS", "Sprint must be in OPEN status to close");
     }
 
@@ -161,7 +178,7 @@ pub fn closeSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     };
 
     // Log operation
-    queries.logOperation(conn, "CLOSE", "sprint", sprint_id, now) catch {};
+    queries.logOperation(conn, "SPRINT_CLOSE", "sprint", sprint_id, now) catch {};
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"OPEN\",\"new_status\":\"CLOSED\",\"closed_at\":\"{s}\"}}", .{
@@ -192,16 +209,33 @@ pub fn listSprints(allocator: std.mem.Allocator, status_filter: ?SprintStatus) !
     }
 
     // Open connection
-    var conn = connection.Connection.open(allocator, roadmap_path) catch {
-        return json.errorResponse(allocator, "DB_ERROR", "Failed to open roadmap database");
-    };
+    var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
     // Fetch sprints
-    const sprints_json = try fetchSprintsJson(allocator, conn, status_filter);
-    defer allocator.free(sprints_json);
+    const sprints = try queries.listSprints(allocator, conn, status_filter);
+    defer {
+        for (sprints) |*s| s.deinit(allocator);
+        allocator.free(sprints);
+    }
 
-    return json.success(allocator, sprints_json);
+    var json_sprints: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (json_sprints.items) |js| allocator.free(js);
+        json_sprints.deinit(allocator);
+    }
+
+    for (sprints) |s| {
+        try json_sprints.append(allocator, try s.toJson(allocator));
+    }
+
+    const sprints_str = try std.mem.join(allocator, ",", json_sprints.items);
+    defer allocator.free(sprints_str);
+
+    const result = try std.fmt.allocPrint(allocator, "{{\"count\":{d},\"sprints\":[{s}]}}", .{ sprints.len, sprints_str });
+    defer allocator.free(result);
+
+    return json.success(allocator, result);
 }
 
 /// Adds a task to a sprint
@@ -240,8 +274,11 @@ pub fn addTaskToSprint(allocator: std.mem.Allocator, sprint_id: i64, task_id: i6
         return json.errorResponse(allocator, "DB_ERROR", "Failed to add task to sprint");
     };
 
+    // Update task status to SPRINT as per spec
+    try queries.updateTaskStatus(conn, task_id, .SPRINT);
+
     // Log operation
-    queries.logOperation(conn, "ADD_TASK", "sprint", sprint_id, now) catch {};
+    queries.logOperation(conn, "SPRINT_ADD_TASK", "sprint", sprint_id, now) catch {};
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"task_id\":{d},\"added_at\":\"{s}\"}}", .{
@@ -261,35 +298,30 @@ pub fn removeTaskFromSprint(allocator: std.mem.Allocator, task_id: i64) ![]const
     defer allocator.free(current);
 
     // Get full path
-    const roadmap_path = path.getRoadmapPath(allocator, current) catch {
-        return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to get roadmap path");
-    };
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
     defer allocator.free(roadmap_path);
 
-    // Validate roadmap exists
-    if (!path.fileExists(roadmap_path)) {
-        return json.errorResponse(allocator, "ROADMAP_NOT_FOUND", "Selected roadmap no longer exists");
-    }
-
     // Open connection
-    var conn = connection.Connection.open(allocator, roadmap_path) catch {
-        return json.errorResponse(allocator, "DB_ERROR", "Failed to open roadmap database");
-    };
+    var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
     // Get current time
-    const now = time.nowUtc(allocator) catch {
-        return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to get current time");
-    };
+    const now = try time.nowUtc(allocator);
     defer allocator.free(now);
 
+    // Get sprint ID before removing task for audit
+    const maybe_sprint_id = try queries.getSprintIdByTaskId(conn, task_id);
+
     // Remove task from sprint
-    queries.removeTaskFromSprint(conn, task_id) catch {
-        return json.errorResponse(allocator, "DB_ERROR", "Failed to remove task from sprint");
-    };
+    try queries.removeTaskFromSprint(conn, task_id);
+
+    // Return task to BACKLOG state as per spec
+    try queries.updateTaskStatus(conn, task_id, .BACKLOG);
 
     // Log operation
-    queries.logOperation(conn, "REMOVE_TASK", "task", task_id, now) catch {};
+    if (maybe_sprint_id) |sprint_id| {
+        try queries.logOperation(conn, "SPRINT_REMOVE_TASK", "sprint", sprint_id, now);
+    }
 
     // Build response
     const response = try std.fmt.allocPrint(allocator, "{{\"task_id\":{d},\"removed_at\":\"{s}\"}}", .{ task_id, now });
@@ -298,90 +330,233 @@ pub fn removeTaskFromSprint(allocator: std.mem.Allocator, task_id: i64) ![]const
     return json.success(allocator, response);
 }
 
-// ============== HELPER FUNCTIONS ==============
+/// Gets a sprint by ID
+pub fn getSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
 
-fn getSprintStatus(conn: connection.Connection, sprint_id: i64) !SprintStatus {
-    const c = @cImport({
-        @cInclude("sqlite3.h");
-    });
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
 
-    const sql = "SELECT status FROM sprints WHERE id = ?";
-    var stmt: ?*c.sqlite3_stmt = null;
-    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
-    if (rc != c.SQLITE_OK) return error.PrepareFailed;
-    defer _ = c.sqlite3_finalize(stmt);
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
 
-    _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+    var sprint_obj = try queries.getSprintById(allocator, conn, sprint_id);
+    defer sprint_obj.deinit(allocator);
 
-    const step_rc = c.sqlite3_step(stmt);
-    if (step_rc != c.SQLITE_ROW) return error.SprintNotFound;
+    const sprint_json = try sprint_obj.toJson(allocator);
+    defer allocator.free(sprint_json);
 
-    const status_text = std.mem.span(c.sqlite3_column_text(stmt, 0));
-    return SprintStatus.fromString(status_text);
+    return json.success(allocator, sprint_json);
 }
 
-fn fetchSprintsJson(allocator: std.mem.Allocator, conn: connection.Connection, status_filter: ?SprintStatus) ![]const u8 {
-    const c = @cImport({
-        @cInclude("sqlite3.h");
-    });
+/// Lists tasks in a sprint
+pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
 
-    var sql: []const u8 = undefined;
-    if (status_filter) |_| {
-        sql = "SELECT id, status, description, created_at, started_at, closed_at FROM sprints WHERE status = ? ORDER BY created_at DESC";
-    } else {
-        sql = "SELECT id, status, description, created_at, started_at, closed_at FROM sprints ORDER BY created_at DESC";
-    }
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
 
-    var stmt: ?*c.sqlite3_stmt = null;
-    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
-    if (rc != c.SQLITE_OK) return error.PrepareFailed;
-    defer _ = c.sqlite3_finalize(stmt);
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
 
-    if (status_filter) |s| {
-        const status_str = s.toString();
-        _ = c.sqlite3_bind_text(stmt, 1, status_str.ptr, @intCast(status_str.len), c.SQLITE_STATIC);
-    }
-
-    var sprints: std.array_list.Aligned([]const u8, null) = .empty;
+    const tasks = try queries.getTasksBySprint(allocator, conn, sprint_id);
     defer {
-        for (sprints.items) |s| {
-            allocator.free(s);
-        }
-        sprints.deinit(allocator);
+        for (tasks) |*t| t.deinit(allocator);
+        allocator.free(tasks);
     }
 
-    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
-        const id = c.sqlite3_column_int64(stmt, 0);
-        const status = std.mem.span(c.sqlite3_column_text(stmt, 1));
-        const description = std.mem.span(c.sqlite3_column_text(stmt, 2));
-        const created_at = std.mem.span(c.sqlite3_column_text(stmt, 3));
-
-        const started_at_ptr = c.sqlite3_column_text(stmt, 4);
-        const closed_at_ptr = c.sqlite3_column_text(stmt, 5);
-
-        const started_at: ?[]const u8 = if (started_at_ptr) |p| std.mem.span(p) else null;
-        const closed_at: ?[]const u8 = if (closed_at_ptr) |p| std.mem.span(p) else null;
-
-        const sprint_json = if (started_at) |s| (
-            if (closed_at) |cl|
-                try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"status\":\"{s}\",\"description\":\"{s}\",\"created_at\":\"{s}\",\"started_at\":\"{s}\",\"closed_at\":\"{s}\"}}", .{
-                    id, status, description, created_at, s, cl,
-                })
-            else
-                try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"status\":\"{s}\",\"description\":\"{s}\",\"created_at\":\"{s}\",\"started_at\":\"{s}\"}}", .{
-                    id, status, description, created_at, s,
-                })
-        ) else (
-            try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"status\":\"{s}\",\"description\":\"{s}\",\"created_at\":\"{s}\"}}", .{
-                id, status, description, created_at,
-            })
-        );
-
-        try sprints.append(allocator, sprint_json);
+    var json_tasks: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (json_tasks.items) |jt| allocator.free(jt);
+        json_tasks.deinit(allocator);
     }
 
-    const sprints_str = try std.mem.join(allocator, ",", sprints.items);
+    for (tasks) |t| {
+        try json_tasks.append(allocator, try t.toJson(allocator));
+    }
+
+    const tasks_str = try std.mem.join(allocator, ",", json_tasks.items);
+    defer allocator.free(tasks_str);
+
+    const result = try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, tasks_str });
+    defer allocator.free(result);
+
+    return json.success(allocator, result);
+}
+
+/// Updates a sprint description
+pub fn updateSprint(allocator: std.mem.Allocator, sprint_id: i64, description: []const u8) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
+
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
+
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
+
+    try queries.updateSprintDescription(conn, sprint_id, description);
+
+    const now = try time.nowUtc(allocator);
+    defer allocator.free(now);
+
+    try queries.logOperation(conn, "SPRINT_UPDATE", "sprint", sprint_id, now);
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"description\":\"{s}\",\"updated_at\":\"{s}\"}}", .{ sprint_id, description, now });
+    defer allocator.free(response);
+
+    return json.success(allocator, response);
+}
+
+/// Reopens a sprint (CLOSED -> OPEN)
+pub fn reopenSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
+
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
+
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
+
+    const sprint_obj = try queries.getSprintById(allocator, conn, sprint_id);
+    defer {
+        var s = sprint_obj;
+        s.deinit(allocator);
+    }
+
+    if (sprint_obj.status != .CLOSED) {
+        return json.errorResponse(allocator, "INVALID_STATUS", "Only CLOSED sprints can be reopened");
+    }
+
+    try queries.updateSprintStatus(conn, sprint_id, .OPEN);
+    try queries.updateSprintClosedAt(conn, sprint_id, null);
+
+    const now = try time.nowUtc(allocator);
+    defer allocator.free(now);
+
+    try queries.logOperation(conn, "SPRINT_REOPEN", "sprint", sprint_id, now);
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"previous_status\":\"CLOSED\",\"new_status\":\"OPEN\",\"reopened_at\":\"{s}\"}}", .{ sprint_id, now });
+    defer allocator.free(response);
+
+    return json.success(allocator, response);
+}
+
+/// Gets sprint statistics
+pub fn getSprintStats(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
+
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
+
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
+
+    const stats = try queries.getSprintStats(conn, sprint_id);
+
+    // Convert stats to JSON manually since SprintStats doesn't have toJson
+    const response = try std.fmt.allocPrint(allocator,
+        \\{{"id":{d},"total_tasks":{d},"completion_percentage":{d},"by_status":{{"BACKLOG":{d},"SPRINT":{d},"DOING":{d},"TESTING":{d},"COMPLETED":{d}}}}}
+    , .{
+        sprint_id,
+        stats.total_tasks,
+        stats.completion_percentage,
+        stats.by_status.backlog,
+        stats.by_status.sprint,
+        stats.by_status.doing,
+        stats.by_status.testing,
+        stats.by_status.completed,
+    });
+    defer allocator.free(response);
+
+    return json.success(allocator, response);
+}
+
+/// Deletes a sprint
+pub fn deleteSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
+
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
+
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
+
+    const now = try time.nowUtc(allocator);
+    defer allocator.free(now);
+
+    try queries.logOperation(conn, "SPRINT_DELETE", "sprint", sprint_id, now);
+    try queries.deleteSprint(conn, sprint_id);
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"deleted_at\":\"{s}\"}}", .{ sprint_id, now });
+    defer allocator.free(response);
+
+    return json.success(allocator, response);
+}
+
+/// Moves a task between sprints
+pub fn moveTaskBetweenSprints(allocator: std.mem.Allocator, task_id: i64, new_sprint_id: i64) ![]const u8 {
+    const current = try roadmap.getCurrentRoadmap(allocator) orelse {
+        return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
+    };
+    defer allocator.free(current);
+
+    const roadmap_path = try path.getRoadmapPath(allocator, current);
+    defer allocator.free(roadmap_path);
+
+    var conn = try connection.Connection.open(allocator, roadmap_path);
+    defer conn.close(allocator);
+
+    try queries.moveTaskBetweenSprints(conn, task_id, new_sprint_id);
+
+    const now = try time.nowUtc(allocator);
+    defer allocator.free(now);
+
+    try queries.logOperation(conn, "SPRINT_MOVE_TASK", "sprint", new_sprint_id, now);
+
+    const response = try std.fmt.allocPrint(allocator, "{{\"task_id\":{d},\"new_sprint_id\":{d},\"moved_at\":\"{s}\"}}", .{ task_id, new_sprint_id, now });
+    defer allocator.free(response);
+
+    return json.success(allocator, response);
+}
+
+
+fn fetchSprintsJson(allocator: std.mem.Allocator, conn: connection.Connection, status_filter: ?SprintStatus) ![]const u8 {
+    const sprints = try queries.listSprints(allocator, conn, status_filter);
+    defer {
+        for (sprints) |*s| s.deinit(allocator);
+        allocator.free(sprints);
+    }
+
+    var json_sprints: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (json_sprints.items) |js| allocator.free(js);
+        json_sprints.deinit(allocator);
+    }
+
+    for (sprints) |s| {
+        try json_sprints.append(allocator, try s.toJson(allocator));
+    }
+
+    const sprints_str = try std.mem.join(allocator, ",", json_sprints.items);
     defer allocator.free(sprints_str);
 
-    return std.fmt.allocPrint(allocator, "{{\"count\":{d},\"sprints\":[{s}]}}", .{ sprints.items.len, sprints_str });
+    return std.fmt.allocPrint(allocator, "{{\"count\":{d},\"sprints\":[{s}]}}", .{ sprints.len, sprints_str });
 }

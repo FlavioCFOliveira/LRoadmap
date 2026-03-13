@@ -7,23 +7,24 @@ const c = @cImport({
 pub const Connection = struct {
     /// SQLite database handle
     db: *c.sqlite3,
-    /// Path to the database file
-    path: []const u8,
+    /// Path to the database file (null-terminated)
+    path: [:0]const u8,
 
     /// Opens a connection to a SQLite database
     /// Caller owns the returned memory
     pub fn open(allocator: std.mem.Allocator, path: []const u8) !Connection {
-        // Duplicate path for storage
-        const path_copy = try allocator.dupe(u8, path);
-        errdefer allocator.free(path_copy);
+        // Duplicate path for storage and ensure null-termination for C API
+        const path_z = try allocator.dupeZ(u8, path);
+        errdefer allocator.free(path_z);
 
         var db: ?*c.sqlite3 = null;
-        const rc = c.sqlite3_open(path.ptr, &db);
+        const rc = c.sqlite3_open(path_z.ptr, &db);
 
         if (rc != c.SQLITE_OK) {
             if (db) |db_ptr| {
                 _ = c.sqlite3_close(db_ptr);
             }
+            allocator.free(path_z);
             return error.DbOpenFailed;
         }
 
@@ -40,7 +41,7 @@ pub const Connection = struct {
 
         return Connection{
             .db = db.?,
-            .path = path_copy,
+            .path = path_z,
         };
     }
 
@@ -50,8 +51,8 @@ pub const Connection = struct {
         allocator.free(self.path);
     }
 
-    /// Executes a simple SQL statement
-    pub fn exec(self: Connection, sql: []const u8) !void {
+    /// Executes a simple SQL statement (must be null-terminated)
+    pub fn exec(self: Connection, sql: [:0]const u8) !void {
         const rc = c.sqlite3_exec(self.db, sql.ptr, null, null, null);
         if (rc != c.SQLITE_OK) {
             return error.SqlExecFailed;
@@ -110,24 +111,6 @@ pub fn createRoadmapFile(path: []const u8) !void {
     file.close();
 }
 
-/// Checks if a database connection is valid
-pub fn testConnection(path: []const u8) bool {
-    var db: ?*c.sqlite3 = null;
-    const rc = c.sqlite3_open(path.ptr, &db);
-
-    if (rc != c.SQLITE_OK) {
-        return false;
-    }
-
-    if (db) |db_ptr| {
-        // Try to execute a simple query
-        const test_rc = c.sqlite3_exec(db_ptr, "SELECT 1", null, null, null);
-        _ = c.sqlite3_close(db_ptr);
-        return test_rc == c.SQLITE_OK;
-    }
-
-    return false;
-}
 
 // ============== TESTS ==============
 

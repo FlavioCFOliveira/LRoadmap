@@ -253,12 +253,26 @@ rmp task stat -r <name> 5,8,12 COMPLETED
 ```json
 {
   "success": true,
-  "data": {
-    "updated": [1, 2, 3],
-    "count": 3,
-    "new_status": "DOING",
-    "updated_at": "2026-03-12T15:30:00.000Z"
-  }
+  "results": [
+    {
+      "success": true,
+      "data": {
+        "id": 1,
+        "previous_status": "SPRINT",
+        "new_status": "DOING",
+        "changed_at": "2026-03-13T00:08:56.000Z"
+      }
+    },
+    {
+      "success": true,
+      "data": {
+        "id": 2,
+        "previous_status": "SPRINT",
+        "new_status": "DOING",
+        "changed_at": "2026-03-13T00:08:56.000Z"
+      }
+    }
+  ]
 }
 ```
 
@@ -277,18 +291,7 @@ rmp task prio -r <name> 1,2,3,10 5
 **Priority:** 0-9. Urgency/Pertinence: 0 = low urgency, 9 = maximum urgency.
 
 **JSON Output (bulk):**
-```json
-{
-  "success": true,
-  "data": {
-    "operation": "TASK_PRIORITY_CHANGE",
-    "updated": [1, 2, 3, 10],
-    "count": 4,
-    "new_priority": 5,
-    "performed_at": "2026-03-12T15:30:00.000Z"
-  }
-}
-```
+Same nested `results` format as status change for multiple IDs.
 
 ### Change Severity (Bulk Support)
 
@@ -305,18 +308,7 @@ rmp task sev -r <name> 1,2,3,10 9
 **Severity:** 0-9. Technical impact: 0 = minimal impact, 9 = critical impact.
 
 **JSON Output (bulk):**
-```json
-{
-  "success": true,
-  "data": {
-    "operation": "TASK_SEVERITY_CHANGE",
-    "updated": [1, 2, 3, 10],
-    "count": 4,
-    "new_severity": 9,
-    "performed_at": "2026-03-12T15:30:00.000Z"
-  }
-}
-```
+Same nested `results` format as status change for multiple IDs.
 
 ### Remove Task(s)
 

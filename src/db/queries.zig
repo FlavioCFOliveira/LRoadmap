@@ -53,6 +53,202 @@ pub fn updateTaskStatus(conn: Connection, id: i64, new_status: TaskStatus) !void
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
 }
 
+pub fn updateTaskPriority(conn: Connection, id: i64, priority: i32) !void {
+    const sql = "UPDATE tasks SET priority = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int(stmt, 1, priority);
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn updateTaskSeverity(conn: Connection, id: i64, severity: i32) !void {
+    const sql = "UPDATE tasks SET severity = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int(stmt, 1, severity);
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn updateTaskCompletedAt(conn: Connection, id: i64, completed_at: ?[]const u8) !void {
+    const sql = "UPDATE tasks SET completed_at = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (completed_at) |ca| {
+        _ = c.sqlite3_bind_text(stmt, 1, ca.ptr, @intCast(ca.len), c.SQLITE_STATIC);
+    } else {
+        _ = c.sqlite3_bind_null(stmt, 1);
+    }
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn getTaskById(allocator: std.mem.Allocator, conn: Connection, id: i64) !Task {
+    const sql = "SELECT id, priority, severity, status, description, specialists, action, expected_result, created_at, completed_at FROM tasks WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, id);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.TaskNotFound;
+
+    return rowToTask(allocator, stmt.?);
+}
+
+pub fn getTasksByIds(allocator: std.mem.Allocator, conn: Connection, ids: []const i64) ![]Task {
+    if (ids.len == 0) return &[_]Task{};
+
+    var list: std.ArrayListUnmanaged(Task) = .empty;
+    errdefer {
+        for (list.items) |*t| t.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    for (ids) |id| {
+        if (getTaskById(allocator, conn, id)) |task| {
+            try list.append(allocator, task);
+        } else |err| {
+            if (err == error.TaskNotFound) continue;
+            return err;
+        }
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+pub fn listTasks(allocator: std.mem.Allocator, conn: Connection, status_filter: ?TaskStatus) ![]Task {
+    const sql: []const u8 = "SELECT id, priority, severity, status, description, specialists, action, expected_result, created_at, completed_at FROM tasks";
+    var where_clause: []const u8 = "";
+    if (status_filter != null) {
+        where_clause = " WHERE status = ?";
+    }
+    const order_clause = " ORDER BY priority DESC, created_at ASC";
+
+    const full_sql = try std.mem.concat(allocator, u8, &[_][]const u8{ sql, where_clause, order_clause });
+    defer allocator.free(full_sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), full_sql.ptr, @intCast(full_sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (status_filter) |s| {
+        const s_str = s.toString();
+        _ = c.sqlite3_bind_text(stmt, 1, s_str.ptr, @intCast(s_str.len), c.SQLITE_STATIC);
+    }
+
+    var list: std.ArrayListUnmanaged(Task) = .empty;
+    errdefer {
+        for (list.items) |*t| t.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        try list.append(allocator, try rowToTask(allocator, stmt.?));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+fn rowToTask(allocator: std.mem.Allocator, stmt: *c.sqlite3_stmt) !Task {
+    const id = c.sqlite3_column_int64(stmt, 0);
+    const priority = c.sqlite3_column_int(stmt, 1);
+    const severity = c.sqlite3_column_int(stmt, 2);
+    const status_str = std.mem.span(c.sqlite3_column_text(stmt, 3));
+    const description = std.mem.span(c.sqlite3_column_text(stmt, 4));
+    const specialists_ptr = c.sqlite3_column_text(stmt, 5);
+    const action = std.mem.span(c.sqlite3_column_text(stmt, 6));
+    const expected_result = std.mem.span(c.sqlite3_column_text(stmt, 7));
+    const created_at = std.mem.span(c.sqlite3_column_text(stmt, 8));
+    const completed_at_ptr = c.sqlite3_column_text(stmt, 9);
+
+    return Task{
+        .id = id,
+        .priority = priority,
+        .severity = severity,
+        .status = try TaskStatus.fromString(status_str),
+        .description = try allocator.dupe(u8, description),
+        .specialists = if (specialists_ptr) |p| try allocator.dupe(u8, std.mem.span(p)) else null,
+        .action = try allocator.dupe(u8, action),
+        .expected_result = try allocator.dupe(u8, expected_result),
+        .created_at = try allocator.dupe(u8, created_at),
+        .completed_at = if (completed_at_ptr) |p| try allocator.dupe(u8, std.mem.span(p)) else null,
+    };
+}
+
+pub fn updateTask(allocator: std.mem.Allocator, conn: Connection, id: i64, updates: Task.TaskUpdate) !void {
+    var parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer parts.deinit(allocator);
+
+    if (updates.priority) |_| try parts.append(allocator, "priority = ?");
+    if (updates.severity) |_| try parts.append(allocator, "severity = ?");
+    if (updates.description) |_| try parts.append(allocator, "description = ?");
+    if (updates.specialists) |_| try parts.append(allocator, "specialists = ?");
+    if (updates.action) |_| try parts.append(allocator, "action = ?");
+    if (updates.expected_result) |_| try parts.append(allocator, "expected_result = ?");
+
+    if (parts.items.len == 0) return;
+
+    const set_clause = try std.mem.join(allocator, ", ", parts.items);
+    defer allocator.free(set_clause);
+
+    const sql = try std.fmt.allocPrint(allocator, "UPDATE tasks SET {s} WHERE id = ?", .{set_clause});
+    defer allocator.free(sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    var idx: c_int = 1;
+    if (updates.priority) |p| {
+        _ = c.sqlite3_bind_int(stmt, idx, p);
+        idx += 1;
+    }
+    if (updates.severity) |s| {
+        _ = c.sqlite3_bind_int(stmt, idx, s);
+        idx += 1;
+    }
+    if (updates.description) |d| {
+        _ = c.sqlite3_bind_text(stmt, idx, d.ptr, @intCast(d.len), c.SQLITE_STATIC);
+        idx += 1;
+    }
+    if (updates.specialists) |s| {
+        _ = c.sqlite3_bind_text(stmt, idx, s.ptr, @intCast(s.len), c.SQLITE_STATIC);
+        idx += 1;
+    }
+    if (updates.action) |a| {
+        _ = c.sqlite3_bind_text(stmt, idx, a.ptr, @intCast(a.len), c.SQLITE_STATIC);
+        idx += 1;
+    }
+    if (updates.expected_result) |e| {
+        _ = c.sqlite3_bind_text(stmt, idx, e.ptr, @intCast(e.len), c.SQLITE_STATIC);
+        idx += 1;
+    }
+
+    _ = c.sqlite3_bind_int64(stmt, idx, id);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+}
+
 pub fn deleteTask(conn: Connection, id: i64) !void {
     const sql = "DELETE FROM tasks WHERE id = ?";
     var stmt: ?*c.sqlite3_stmt = null;
@@ -101,6 +297,184 @@ pub fn updateSprintStatus(conn: Connection, id: i64, status: SprintStatus) !void
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
 }
 
+pub fn updateSprintStartedAt(conn: Connection, id: i64, started_at: ?[]const u8) !void {
+    const sql = "UPDATE sprints SET started_at = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (started_at) |sa| {
+        _ = c.sqlite3_bind_text(stmt, 1, sa.ptr, @intCast(sa.len), c.SQLITE_STATIC);
+    } else {
+        _ = c.sqlite3_bind_null(stmt, 1);
+    }
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn updateSprintClosedAt(conn: Connection, id: i64, closed_at: ?[]const u8) !void {
+    const sql = "UPDATE sprints SET closed_at = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (closed_at) |ca| {
+        _ = c.sqlite3_bind_text(stmt, 1, ca.ptr, @intCast(ca.len), c.SQLITE_STATIC);
+    } else {
+        _ = c.sqlite3_bind_null(stmt, 1);
+    }
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn getSprintById(allocator: std.mem.Allocator, conn: Connection, id: i64) !Sprint {
+    const sql = "SELECT id, status, description, created_at, started_at, closed_at FROM sprints WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, id);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.SprintNotFound;
+
+    const status_str = std.mem.span(c.sqlite3_column_text(stmt, 1));
+    const description = std.mem.span(c.sqlite3_column_text(stmt, 2));
+    const created_at = std.mem.span(c.sqlite3_column_text(stmt, 3));
+    const started_at_ptr = c.sqlite3_column_text(stmt, 4);
+    const closed_at_ptr = c.sqlite3_column_text(stmt, 5);
+
+    var sprint = try Sprint.init(allocator, id, description, created_at);
+    sprint.status = try SprintStatus.fromString(status_str);
+    if (started_at_ptr) |p| sprint.started_at = try allocator.dupe(u8, std.mem.span(p));
+    if (closed_at_ptr) |p| sprint.closed_at = try allocator.dupe(u8, std.mem.span(p));
+
+    // Also fetch task IDs
+    const task_ids = try getTaskIdsBySprint(allocator, conn, id);
+    defer allocator.free(task_ids);
+
+    // We need to re-allocate sprint.tasks because Sprint.init allocates an empty one
+    allocator.free(sprint.tasks);
+    sprint.tasks = try allocator.dupe(i64, task_ids);
+    sprint.task_count = @intCast(task_ids.len);
+
+    return sprint;
+}
+
+fn getTaskIdsBySprint(allocator: std.mem.Allocator, conn: Connection, sprint_id: i64) ![]i64 {
+    const sql = "SELECT task_id FROM sprint_tasks WHERE sprint_id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+
+    var list: std.ArrayListUnmanaged(i64) = .empty;
+    defer list.deinit(allocator);
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        try list.append(allocator, c.sqlite3_column_int64(stmt, 0));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+pub fn getTasksBySprint(allocator: std.mem.Allocator, conn: Connection, sprint_id: i64) ![]Task {
+    const sql =
+        \\SELECT t.id, t.priority, t.severity, t.status, t.description, t.specialists, t.action, t.expected_result, t.created_at, t.completed_at
+        \\FROM tasks t
+        \\JOIN sprint_tasks st ON t.id = st.task_id
+        \\WHERE st.sprint_id = ?
+        \\ORDER BY t.priority DESC, t.created_at ASC
+    ;
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+
+    var list: std.ArrayListUnmanaged(Task) = .empty;
+    errdefer {
+        for (list.items) |*t| t.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        try list.append(allocator, try rowToTask(allocator, stmt.?));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+pub fn updateSprintDescription(conn: Connection, id: i64, description: []const u8) !void {
+    const sql = "UPDATE sprints SET description = ? WHERE id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_text(stmt, 1, description.ptr, @intCast(description.len), c.SQLITE_STATIC);
+    _ = c.sqlite3_bind_int64(stmt, 2, id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn listSprints(allocator: std.mem.Allocator, conn: Connection, status_filter: ?SprintStatus) ![]Sprint {
+    const sql: []const u8 = "SELECT id, status, description, created_at, started_at, closed_at FROM sprints";
+    var where_clause: []const u8 = "";
+    if (status_filter != null) {
+        where_clause = " WHERE status = ?";
+    }
+    const order_clause = " ORDER BY created_at DESC";
+
+    const full_sql = try std.mem.concat(allocator, u8, &[_][]const u8{ sql, where_clause, order_clause });
+    defer allocator.free(full_sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), full_sql.ptr, @intCast(full_sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (status_filter) |s| {
+        const s_str = s.toString();
+        _ = c.sqlite3_bind_text(stmt, 1, s_str.ptr, @intCast(s_str.len), c.SQLITE_STATIC);
+    }
+
+    var list: std.ArrayListUnmanaged(Sprint) = .empty;
+    errdefer {
+        for (list.items) |*s| s.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        const id = c.sqlite3_column_int64(stmt, 0);
+        const status_str = std.mem.span(c.sqlite3_column_text(stmt, 1));
+        const description = std.mem.span(c.sqlite3_column_text(stmt, 2));
+        const created_at = std.mem.span(c.sqlite3_column_text(stmt, 3));
+        const started_at_ptr = c.sqlite3_column_text(stmt, 4);
+        const closed_at_ptr = c.sqlite3_column_text(stmt, 5);
+
+        var sprint = try Sprint.init(allocator, id, description, created_at);
+        sprint.status = try SprintStatus.fromString(status_str);
+        if (started_at_ptr) |p| sprint.started_at = try allocator.dupe(u8, std.mem.span(p));
+        if (closed_at_ptr) |p| sprint.closed_at = try allocator.dupe(u8, std.mem.span(p));
+
+        try list.append(allocator, sprint);
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
 pub fn deleteSprint(conn: Connection, id: i64) !void {
     const sql = "DELETE FROM sprints WHERE id = ?";
 
@@ -133,6 +507,22 @@ pub fn addTaskToSprint(conn: Connection, sprint_id: i64, task_id: i64, added_at:
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
 }
 
+pub fn getSprintIdByTaskId(conn: Connection, task_id: i64) !?i64 {
+    const sql = "SELECT sprint_id FROM sprint_tasks WHERE task_id = ?";
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, task_id);
+
+    if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        return c.sqlite3_column_int64(stmt, 0);
+    }
+
+    return null;
+}
+
 pub fn removeTaskFromSprint(conn: Connection, task_id: i64) !void {
     const sql = "DELETE FROM sprint_tasks WHERE task_id = ?";
 
@@ -145,6 +535,66 @@ pub fn removeTaskFromSprint(conn: Connection, task_id: i64) !void {
 
     const step_rc = c.sqlite3_step(stmt);
     if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn moveTaskBetweenSprints(conn: Connection, task_id: i64, new_sprint_id: i64) !void {
+    const sql = "UPDATE sprint_tasks SET sprint_id = ? WHERE task_id = ?";
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, new_sprint_id);
+    _ = c.sqlite3_bind_int64(stmt, 2, task_id);
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc != c.SQLITE_DONE) return error.StepFailed;
+}
+
+pub fn getSprintStats(conn: Connection, sprint_id: i64) !@import("../models/sprint.zig").SprintStats {
+    const sql =
+        \\SELECT
+        \\  COUNT(*),
+        \\  SUM(CASE WHEN status = 'BACKLOG' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN status = 'SPRINT' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN status = 'DOING' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN status = 'TESTING' THEN 1 ELSE 0 END),
+        \\  SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END)
+        \\FROM tasks t
+        \\JOIN sprint_tasks st ON t.id = st.task_id
+        \\WHERE st.sprint_id = ?
+    ;
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.StepFailed;
+
+    const total = c.sqlite3_column_int(stmt, 0);
+    const backlog = c.sqlite3_column_int(stmt, 1);
+    const sprint = c.sqlite3_column_int(stmt, 2);
+    const doing = c.sqlite3_column_int(stmt, 3);
+    const testing = c.sqlite3_column_int(stmt, 4);
+    const completed = c.sqlite3_column_int(stmt, 5);
+
+    const completion_percentage: i32 = if (total > 0) @intCast(@divTrunc(completed * 100, total)) else 0;
+
+    return .{
+        .total_tasks = total,
+        .by_status = .{
+            .backlog = backlog,
+            .sprint = sprint,
+            .doing = doing,
+            .testing = testing,
+            .completed = completed,
+        },
+        .completion_percentage = completion_percentage,
+    };
 }
 
 // ============== AUDIT QUERIES ==============

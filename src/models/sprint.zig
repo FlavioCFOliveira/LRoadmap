@@ -103,6 +103,46 @@ pub const Sprint = struct {
         }
         return false;
     }
+
+    pub fn toJson(self: Sprint, allocator: std.mem.Allocator) ![]const u8 {
+        const json = @import("../utils/json.zig");
+        const desc_escaped = try json.escapeString(allocator, self.description);
+        defer allocator.free(desc_escaped);
+
+        const created_escaped = try json.escapeString(allocator, self.created_at);
+        defer allocator.free(created_escaped);
+
+        var tasks_list: std.ArrayListUnmanaged(u8) = .empty;
+        defer tasks_list.deinit(allocator);
+
+        try tasks_list.append(allocator, '[');
+        for (self.tasks, 0..) |id, i| {
+            if (i > 0) try tasks_list.append(allocator, ',');
+            var buf: [32]u8 = undefined;
+            const str = try std.fmt.bufPrint(&buf, "{d}", .{id});
+            try tasks_list.appendSlice(allocator, str);
+        }
+        try tasks_list.append(allocator, ']');
+
+        const started_val = if (self.started_at) |s| try json.escapeString(allocator, s) else try allocator.dupe(u8, "null");
+        defer allocator.free(started_val);
+
+        const closed_val = if (self.closed_at) |c| try json.escapeString(allocator, c) else try allocator.dupe(u8, "null");
+        defer allocator.free(closed_val);
+
+        return std.fmt.allocPrint(allocator,
+            \\{{"id":{d},"status":"{s}","description":{s},"tasks":{s},"task_count":{d},"created_at":{s},"started_at":{s},"closed_at":{s}}}
+        , .{
+            self.id,
+            self.status.toString(),
+            desc_escaped,
+            tasks_list.items,
+            self.task_count,
+            created_escaped,
+            started_val,
+            closed_val,
+        });
+    }
 };
 
 /// Sprint statistics
