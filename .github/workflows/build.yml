@@ -103,49 +103,9 @@ jobs:
           name: rmp-x86_64-windows
           path: zig-out/x86_64-windows/bin/rmp.exe
 
-  build-windows-aarch64:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.15.2
-      - name: Download SQLite Amalgamation
-        shell: powershell
-        run: |
-          # Download SQLite amalgamation source
-          $sqliteVersion = "3510300"
-          $url = "https://sqlite.org/2026/sqlite-amalgamation-$sqliteVersion.zip"
-          Invoke-WebRequest -Uri $url -OutFile "sqlite.zip"
-          # Extract to temp directory
-          $tempDir = "sqlite-temp"
-          Expand-Archive -Path "sqlite.zip" -DestinationPath $tempDir
-          # Remove existing sqlite3-src if present
-          if (Test-Path "sqlite3-src") { Remove-Item -Recurse -Force "sqlite3-src" }
-          # Move the extracted folder to sqlite3-src
-          Move-Item -Path "$tempDir\sqlite-amalgamation-$sqliteVersion" -Destination "sqlite3-src"
-          # Cleanup
-          Remove-Item -Recurse -Force $tempDir
-          Remove-Item "sqlite.zip"
-          # Verify files
-          Get-ChildItem "sqlite3-src"
-      - name: Build
-        shell: powershell
-        run: |
-          # Set environment variable for build.zig to detect
-          $env:SQLITE_SOURCE = "$PWD\sqlite3-src"
-          Write-Host "SQLITE_SOURCE = $env:SQLITE_SOURCE"
-          zig build
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rmp-aarch64-windows
-          path: zig-out/aarch64-windows/bin/rmp.exe
-
   # Continuous Release on main branch (overwrites previous dev release)
   dev-release:
-    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -167,7 +127,6 @@ jobs:
           cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
           cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
           cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
-          cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
           ls -la release/
 
       - name: Generate checksums
@@ -195,7 +154,6 @@ jobs:
             - `rmp-aarch64-linux` - Linux ARM64
             - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
             - `rmp-x86_64-windows.exe` - Windows x86_64
-            - `rmp-aarch64-windows.exe` - Windows ARM64
 
             ### Installation
             Download the binary for your platform and add it to your PATH.
@@ -208,7 +166,7 @@ jobs:
 
   # Release on tags (v*)
   release:
-    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64, build-windows-aarch64]
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-aarch64, build-windows-x86_64]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -230,7 +188,6 @@ jobs:
           cp artifacts/rmp-aarch64-linux/rmp release/rmp-aarch64-linux
           cp artifacts/rmp-aarch64-macos/rmp release/rmp-aarch64-macos
           cp artifacts/rmp-x86_64-windows/rmp.exe release/rmp-x86_64-windows.exe
-          cp artifacts/rmp-aarch64-windows/rmp.exe release/rmp-aarch64-windows.exe
           ls -la release/
 
       - name: Generate checksums
@@ -255,7 +212,6 @@ jobs:
             - `rmp-aarch64-linux` - Linux ARM64
             - `rmp-aarch64-macos` - macOS ARM64 (Apple Silicon)
             - `rmp-x86_64-windows.exe` - Windows x86_64
-            - `rmp-aarch64-windows.exe` - Windows ARM64
 
             ### Installation
             Download the binary for your platform and add it to your PATH.

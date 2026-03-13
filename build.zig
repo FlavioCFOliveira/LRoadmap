@@ -7,7 +7,6 @@ const TargetArch = enum {
     aarch64_linux,
     aarch64_macos,
     x86_64_windows,
-    aarch64_windows,
 
     fn getTarget(self: TargetArch) std.Target.Query {
         return switch (self) {
@@ -28,10 +27,6 @@ const TargetArch = enum {
                 .cpu_arch = .x86_64,
                 .os_tag = .windows,
             },
-            .aarch64_windows => .{
-                .cpu_arch = .aarch64,
-                .os_tag = .windows,
-            },
         };
     }
 
@@ -42,7 +37,6 @@ const TargetArch = enum {
             .aarch64_linux => "aarch64-linux",
             .aarch64_macos => "aarch64-macos",
             .x86_64_windows => "x86_64-windows",
-            .aarch64_windows => "aarch64-windows",
         };
         // Note: The build system automatically prepends 'zig-out'
         // So we only need to provide the relative path after that
@@ -67,7 +61,7 @@ pub fn build(b: *std.Build) void {
     const target_arch: TargetArch = b.option(
         TargetArch,
         "target-arch",
-        "Target architecture for cross-compilation (native, x86_64_linux, aarch64_linux, aarch64_macos, x86_64_windows, aarch64_windows)",
+        "Target architecture for cross-compilation (native, x86_64_linux, aarch64_linux, aarch64_macos, x86_64_windows)",
     ) orelse .native;
 
     const target = b.resolveTargetQuery(target_arch.getTarget());
@@ -157,7 +151,6 @@ fn addCrossCompileSteps(b: *std.Build, optimize: std.builtin.OptimizeMode) void 
         .{ .name = "build-aarch64-linux", .arch = TargetArch.aarch64_linux, .display = "aarch64 Linux" },
         .{ .name = "build-aarch64-macos", .arch = TargetArch.aarch64_macos, .display = "aarch64 macOS" },
         .{ .name = "build-x86_64-windows", .arch = TargetArch.x86_64_windows, .display = "x86_64 Windows" },
-        .{ .name = "build-aarch64-windows", .arch = TargetArch.aarch64_windows, .display = "aarch64 Windows" },
     };
 
     const all_step = b.step("build-all", "Build for all supported architectures");
@@ -171,7 +164,7 @@ fn addCrossCompileSteps(b: *std.Build, optimize: std.builtin.OptimizeMode) void 
             .optimize = optimize,
         });
 
-        const is_windows = info.arch == .x86_64_windows or info.arch == .aarch64_windows;
+        const is_windows = info.arch == .x86_64_windows;
         const cross_exe = b.addExecutable(.{
             .name = if (is_windows) "rmp.exe" else "rmp",
             .root_module = cross_module,
