@@ -136,15 +136,42 @@ pub fn getTasksByIds(allocator: std.mem.Allocator, conn: Connection, ids: []cons
     return list.toOwnedSlice(allocator);
 }
 
-pub fn listTasks(allocator: std.mem.Allocator, conn: Connection, status_filter: ?TaskStatus) ![]Task {
-    const sql: []const u8 = "SELECT id, priority, severity, status, description, specialists, action, expected_result, created_at, completed_at FROM tasks";
-    var where_clause: []const u8 = "";
-    if (status_filter != null) {
-        where_clause = " WHERE status = ?";
-    }
+/// Filter options for listing tasks
+pub const TaskFilterOptions = struct {
+    status: ?TaskStatus = null,
+    priority_min: ?i32 = null,
+    severity_min: ?i32 = null,
+    limit: ?i32 = null,
+};
+
+pub fn listTasks(allocator: std.mem.Allocator, conn: Connection, filters: TaskFilterOptions) ![]Task {
+    const sql_base: []const u8 = "SELECT id, priority, severity, status, description, specialists, action, expected_result, created_at, completed_at FROM tasks";
     const order_clause = " ORDER BY priority DESC, created_at ASC";
 
-    const full_sql = try std.mem.concat(allocator, u8, &[_][]const u8{ sql, where_clause, order_clause });
+    // Build WHERE clause dynamically
+    var where_parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer where_parts.deinit(allocator);
+
+    if (filters.status != null) try where_parts.append(allocator, "status = ?");
+    if (filters.priority_min != null) try where_parts.append(allocator, "priority >= ?");
+    if (filters.severity_min != null) try where_parts.append(allocator, "severity >= ?");
+
+    var full_sql: []const u8 = undefined;
+    if (where_parts.items.len > 0) {
+        const where_clause = try std.mem.join(allocator, " AND ", where_parts.items);
+        defer allocator.free(where_clause);
+        if (filters.limit != null) {
+            full_sql = try std.fmt.allocPrint(allocator, "{s} WHERE {s}{s} LIMIT {d}", .{ sql_base, where_clause, order_clause, filters.limit.? });
+        } else {
+            full_sql = try std.fmt.allocPrint(allocator, "{s} WHERE {s}{s}", .{ sql_base, where_clause, order_clause });
+        }
+    } else {
+        if (filters.limit != null) {
+            full_sql = try std.fmt.allocPrint(allocator, "{s}{s} LIMIT {d}", .{ sql_base, order_clause, filters.limit.? });
+        } else {
+            full_sql = try std.mem.concat(allocator, u8, &[_][]const u8{ sql_base, order_clause });
+        }
+    }
     defer allocator.free(full_sql);
 
     var stmt: ?*c.sqlite3_stmt = null;
@@ -152,9 +179,20 @@ pub fn listTasks(allocator: std.mem.Allocator, conn: Connection, status_filter: 
     if (rc != c.SQLITE_OK) return error.PrepareFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    if (status_filter) |s| {
+    // Bind parameters
+    var bind_idx: c_int = 1;
+    if (filters.status) |s| {
         const s_str = s.toString();
-        _ = c.sqlite3_bind_text(stmt, 1, s_str.ptr, @intCast(s_str.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, bind_idx, s_str.ptr, @intCast(s_str.len), c.SQLITE_STATIC);
+        bind_idx += 1;
+    }
+    if (filters.priority_min) |p| {
+        _ = c.sqlite3_bind_int(stmt, bind_idx, p);
+        bind_idx += 1;
+    }
+    if (filters.severity_min) |s| {
+        _ = c.sqlite3_bind_int(stmt, bind_idx, s);
+        bind_idx += 1;
     }
 
     var list: std.ArrayListUnmanaged(Task) = .empty;
@@ -403,6 +441,49 @@ pub fn getTasksBySprint(allocator: std.mem.Allocator, conn: Connection, sprint_i
     defer _ = c.sqlite3_finalize(stmt);
 
     _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+
+    var list: std.ArrayListUnmanaged(Task) = .empty;
+    errdefer {
+        for (list.items) |*t| t.deinit(allocator);
+        list.deinit(allocator);
+    }
+
+    while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+        try list.append(allocator, try rowToTask(allocator, stmt.?));
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+/// Get tasks by sprint with optional status filter
+pub fn getTasksBySprintFiltered(allocator: std.mem.Allocator, conn: Connection, sprint_id: i64, status_filter: ?TaskStatus) ![]Task {
+    const sql_base =
+        \\SELECT t.id, t.priority, t.severity, t.status, t.description, t.specialists, t.action, t.expected_result, t.created_at, t.completed_at
+        \\FROM tasks t
+        \\JOIN sprint_tasks st ON t.id = st.task_id
+        \\WHERE st.sprint_id = ?
+    ;
+    const order_clause = " ORDER BY t.priority DESC, t.created_at ASC";
+
+    var full_sql: []const u8 = undefined;
+    if (status_filter) |s| {
+        _ = s; // capture is used for the condition check
+        full_sql = try std.fmt.allocPrint(allocator, "{s} AND t.status = ?{s}", .{ sql_base, order_clause });
+    } else {
+        full_sql = try std.mem.concat(allocator, u8, &[_][]const u8{ sql_base, order_clause });
+    }
+    defer allocator.free(full_sql);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(@ptrCast(conn.db), full_sql.ptr, @intCast(full_sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) return error.PrepareFailed;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    _ = c.sqlite3_bind_int64(stmt, 1, sprint_id);
+    if (status_filter) |s| {
+        const s_str = s.toString();
+        _ = c.sqlite3_bind_text(stmt, 2, s_str.ptr, @intCast(s_str.len), c.SQLITE_STATIC);
+    }
 
     var list: std.ArrayListUnmanaged(Task) = .empty;
     errdefer {

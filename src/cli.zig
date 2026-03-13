@@ -154,7 +154,8 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     }
     if (args.len == 0) {
         // Default: list tasks
-        const result = try task.listTasks(allocator, null);
+        const filters = @import("db/queries.zig").TaskFilterOptions{};
+        const result = try task.listTasks(allocator, filters);
         defer allocator.free(result);
         printStdout("{s}\n", .{result});
         return;
@@ -170,7 +171,18 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
         const status_filter = getStatusFilter(subargs);
-        const result = try task.listTasks(allocator, status_filter);
+        const priority_min = getPriorityMinFilter(subargs);
+        const severity_min = getSeverityMinFilter(subargs);
+        const limit = getLimitFilter(subargs);
+
+        const filters = @import("db/queries.zig").TaskFilterOptions{
+            .status = status_filter,
+            .priority_min = priority_min,
+            .severity_min = severity_min,
+            .limit = limit,
+        };
+
+        const result = try task.listTasks(allocator, filters);
         defer allocator.free(result);
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
@@ -622,7 +634,8 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
             std.process.exit(1);
         };
-        const result = try sprint.listSprintTasks(allocator, id);
+        const status_filter = getStatusFilter(subargs);
+        const result = try sprint.listSprintTasks(allocator, id, status_filter);
         defer allocator.free(result);
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
@@ -1055,6 +1068,36 @@ fn getSprintStatusFilter(args: []const []const u8) ?@import("models/sprint.zig")
     for (args, 0..) |arg, i| {
         if ((std.mem.eql(u8, arg, "--status") or std.mem.eql(u8, arg, "-s")) and i + 1 < args.len) {
             return @import("models/sprint.zig").SprintStatus.fromString(args[i + 1]) catch null;
+        }
+    }
+    return null;
+}
+
+/// Get priority_min filter from args (-p or --priority)
+fn getPriorityMinFilter(args: []const []const u8) ?i32 {
+    for (args, 0..) |arg, i| {
+        if ((std.mem.eql(u8, arg, "--priority") or std.mem.eql(u8, arg, "-p")) and i + 1 < args.len) {
+            return std.fmt.parseInt(i32, args[i + 1], 10) catch null;
+        }
+    }
+    return null;
+}
+
+/// Get severity_min filter from args (--severity)
+fn getSeverityMinFilter(args: []const []const u8) ?i32 {
+    for (args, 0..) |arg, i| {
+        if (std.mem.eql(u8, arg, "--severity") and i + 1 < args.len) {
+            return std.fmt.parseInt(i32, args[i + 1], 10) catch null;
+        }
+    }
+    return null;
+}
+
+/// Get limit filter from args (-l or --limit)
+fn getLimitFilter(args: []const []const u8) ?i32 {
+    for (args, 0..) |arg, i| {
+        if ((std.mem.eql(u8, arg, "--limit") or std.mem.eql(u8, arg, "-l")) and i + 1 < args.len) {
+            return std.fmt.parseInt(i32, args[i + 1], 10) catch null;
         }
     }
     return null;

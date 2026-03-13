@@ -158,43 +158,42 @@ rmp audit stats -r <name> --since 2026-03-01T00:00:00.000Z --until 2026-03-31T23
 
 ### 2. Melhorias nos Filtros Existentes (Média Prioridade)
 
-#### 2.1 Task List - Filtros Adicionais ⏳
+#### 2.1 Task List - Filtros Adicionais ✅
 **Local na SPEC:** `SPEC/COMMANDS_REFERENCE.md` (linhas 52-65)
 
 Filtros já implementados:
 - `-s, --status <state>`: Filtrar por status ✅
+- `-p, --priority <n>`: Prioridade mínima (0-9) ✅
+- `--severity <n>`: Severidade mínima (0-9) ✅
+- `-l, --limit <n>`: Limitar resultados ✅
 
-Faltam:
-- `-p, --priority <n>`: Prioridade mínima (0-9)
-- `--severity <n>`: Severidade mínima (0-9)
-- `-l, --limit <n>`: Limitar resultados
-
-**Exemplos da SPEC:**
+**Exemplos da SPEC (testados e funcionando):**
 ```bash
-rmp task list -r <name> -p 5              # priority >= 5
-rmp task list -r <name> --severity 3      # severity >= 3
-rmp task list -r <name> -l 10             # limit to 10
-rmp task list -r <name> -p 5 -l 20        # combined filters
+rmp task list -r <name> -p 5              # priority >= 5 ✅
+rmp task list -r <name> --severity 3      # severity >= 3 ✅
+rmp task list -r <name> -l 10             # limit to 10 ✅
+rmp task list -r <name> -p 5 -l 20        # combined filters ✅
 ```
 
 **Tarefas:**
-- [ ] Atualizar `handleTaskCommand` em `src/cli.zig` para parsear novas flags
-- [ ] Atualizar `listTasks()` em `src/commands/task.zig` para aceitar filtros adicionais
-- [ ] Adicionar queries parametrizadas em `src/db/queries.zig`:
-  - [ ] `listTasksFiltered(priority_min, severity_min, limit)`
+- [x] Atualizar `handleTaskCommand` em `src/cli.zig` para parsear novas flags
+- [x] Atualizar `listTasks()` em `src/commands/task.zig` para aceitar filtros adicionais
+- [x] Adicionar queries parametrizadas em `src/db/queries.zig`:
+  - [x] `listTasks()` com `TaskFilterOptions` struct
 
-#### 2.2 Sprint Tasks - Filtro por Status ⏳
+#### 2.2 Sprint Tasks - Filtro por Status ✅
 **Local na SPEC:** `SPEC/COMMANDS_REFERENCE.md` (linhas 171-177)
 
+**Exemplos da SPEC (testados e funcionando):**
 ```bash
-rmp sprint tasks -r <name> 1 --status DOING
-rmp sprint tasks -r <name> 1 -s COMPLETED
+rmp sprint tasks -r <name> 1 --status DOING ✅
+rmp sprint tasks -r <name> 1 -s COMPLETED ✅
 ```
 
 **Tarefas:**
-- [ ] Atualizar `handleSprintCommand` em `src/cli.zig` para parsear flag de status
-- [ ] Atualizar `listSprintTasks()` em `src/commands/sprint.zig` para aceitar filtro de status
-- [ ] Adicionar query `getTasksBySprintFiltered()` em `src/db/queries.zig`
+- [x] Atualizar `handleSprintCommand` em `src/cli.zig` para parsear flag de status
+- [x] Atualizar `listSprintTasks()` em `src/commands/sprint.zig` para aceitar filtro de status
+- [x] Adicionar query `getTasksBySprintFiltered()` em `src/db/queries.zig`
 
 ---
 
@@ -207,9 +206,9 @@ rmp sprint tasks -r <name> 1 -s COMPLETED
 | Sprint | 13/13 | 0/13* | 100% |
 | **Audit** | **3/3** | **0/3** | **100%** |
 
-\* Nota: Task e Sprint têm melhorias pendentes nos filtros
+\* Nota: Task e Sprint têm melhorias pendentes nos filtros ✅ (IMPLEMENTADO na Fase 2)
 
-**Progresso Total Estimado**: ~100% do core implementado, **Audit CLI 100%**
+**Progresso Total Estimado**: ~100% do core implementado, **Audit CLI 100%**, **Filtros 100%**
 
 ---
 

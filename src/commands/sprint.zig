@@ -352,8 +352,8 @@ pub fn getSprint(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
     return json.success(allocator, sprint_json);
 }
 
-/// Lists tasks in a sprint
-pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8 {
+/// Lists tasks in a sprint with optional status filter
+pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64, status_filter: ?@import("../models/task.zig").TaskStatus) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -365,7 +365,7 @@ pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    const tasks = try queries.getTasksBySprint(allocator, conn, sprint_id);
+    const tasks = try queries.getTasksBySprintFiltered(allocator, conn, sprint_id, status_filter);
     defer {
         for (tasks) |*t| t.deinit(allocator);
         allocator.free(tasks);
@@ -384,7 +384,10 @@ pub fn listSprintTasks(allocator: std.mem.Allocator, sprint_id: i64) ![]const u8
     const tasks_str = try std.mem.join(allocator, ",", json_tasks.items);
     defer allocator.free(tasks_str);
 
-    const result = try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, tasks_str });
+    const result = if (status_filter) |s|
+        try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"status_filter\":\"{s}\",\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, s.toString(), tasks_str })
+    else
+        try std.fmt.allocPrint(allocator, "{{\"sprint_id\":{d},\"count\":{d},\"tasks\":[{s}]}}", .{ sprint_id, tasks.len, tasks_str });
     defer allocator.free(result);
 
     return json.success(allocator, result);

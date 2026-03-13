@@ -62,8 +62,8 @@ pub fn addTask(allocator: std.mem.Allocator, input: TaskInput) ![]const u8 {
     return json.success(allocator, task_json);
 }
 
-/// Lists tasks with optional status filter
-pub fn listTasks(allocator: std.mem.Allocator, status_filter: ?TaskStatus) ![]const u8 {
+/// Lists tasks with optional filters
+pub fn listTasks(allocator: std.mem.Allocator, filters: queries.TaskFilterOptions) ![]const u8 {
     const current = try roadmap.getCurrentRoadmap(allocator) orelse {
         return json.errorResponse(allocator, "NO_ROADMAP", "No roadmap selected. Use 'rmp roadmap use <name>' first");
     };
@@ -75,7 +75,7 @@ pub fn listTasks(allocator: std.mem.Allocator, status_filter: ?TaskStatus) ![]co
     var conn = try connection.Connection.open(allocator, roadmap_path);
     defer conn.close(allocator);
 
-    const tasks = try queries.listTasks(allocator, conn, status_filter);
+    const tasks = try queries.listTasks(allocator, conn, filters);
     defer {
         for (tasks) |*t| t.deinit(allocator);
         allocator.free(tasks);
@@ -94,7 +94,36 @@ pub fn listTasks(allocator: std.mem.Allocator, status_filter: ?TaskStatus) ![]co
     const tasks_str = try std.mem.join(allocator, ",", json_tasks.items);
     defer allocator.free(tasks_str);
 
-    const result = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"tasks\":[{s}]}}", .{ current, tasks.len, tasks_str });
+    // Build filters info for response
+    var filter_parts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (filter_parts.items) |p| allocator.free(p);
+        filter_parts.deinit(allocator);
+    }
+
+    if (filters.status) |s| {
+        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"status\":\"{s}\"", .{s.toString()}));
+    }
+    if (filters.priority_min) |p| {
+        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"priority_min\":{d}", .{p}));
+    }
+    if (filters.severity_min) |s| {
+        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"severity_min\":{d}", .{s}));
+    }
+    if (filters.limit) |l| {
+        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"limit\":{d}", .{l}));
+    }
+
+    const filters_str = if (filter_parts.items.len > 0)
+        try std.mem.join(allocator, ",", filter_parts.items)
+    else
+        try allocator.dupe(u8, "");
+    defer allocator.free(filters_str);
+
+    const result = if (filters_str.len > 0)
+        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"filters\":{{{s}}},\"tasks\":[{s}]}}", .{ current, tasks.len, filters_str, tasks_str })
+    else
+        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"tasks\":[{s}]}}", .{ current, tasks.len, tasks_str });
     defer allocator.free(result);
 
     return json.success(allocator, result);
