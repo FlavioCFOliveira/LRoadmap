@@ -61,11 +61,19 @@ fn printError(allocator: std.mem.Allocator, code: []const u8, message: []const u
     return getExitCodeForError(code);
 }
 
-/// Prints error and then prints help for the command to stdout
+/// Prints error and then prints help for the command to stderr
 fn printErrorWithHelp(allocator: std.mem.Allocator, code: []const u8, message: []const u8, command: []const u8) u8 {
     const exit_code = printError(allocator, code, message);
     printStderr("\n", .{});
     printCommandHelpStderr(allocator, command);
+    return exit_code;
+}
+
+/// Prints error and then prints help for the subcommand to stderr
+fn printErrorWithSubcommandHelp(code: []const u8, message: []const u8, command: []const u8, subcommand: []const u8) u8 {
+    const exit_code = printError(std.heap.page_allocator, code, message);
+    printStderr("\n", .{});
+    printSubcommandHelp(command, subcommand);
     return exit_code;
 }
 
@@ -152,6 +160,10 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
     const subargs = args[1..];
 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("roadmap", "list");
+            return;
+        }
         const result = try roadmap.listRoadmaps(allocator);
         defer allocator.free(result);
         if (std.mem.indexOf(u8, result, "\"code\":") != null) {
@@ -160,8 +172,12 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "create") or std.mem.eql(u8, subcmd, "new")) {
-        if (subargs.len < 1) {
-            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("roadmap", "create");
+            return;
+        }
+        if (subargs.len < 1 or (subargs.len == 1 and std.mem.startsWith(u8, subargs[0], "-"))) {
+            const exit_code = printErrorWithSubcommandHelp("INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap", "create");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -174,8 +190,12 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm") or std.mem.eql(u8, subcmd, "delete")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("roadmap", "remove");
+            return;
+        }
         if (subargs.len < 1) {
-            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
+            const exit_code = printErrorWithSubcommandHelp("INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap", "remove");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -187,8 +207,12 @@ fn handleRoadmapCommand(allocator: std.mem.Allocator, args: []const []const u8) 
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "use")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("roadmap", "use");
+            return;
+        }
         if (subargs.len < 1) {
-            const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap");
+            const exit_code = printErrorWithSubcommandHelp("INVALID_INPUT", "Missing required parameter: roadmap name", "roadmap", "use");
             std.process.exit(exit_code);
         }
         const name = subargs[0];
@@ -232,6 +256,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
     }
 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "list");
+            return;
+        }
         const status_filter = getStatusFilter(subargs);
         const priority_min = getPriorityMinFilter(subargs);
         const severity_min = getSeverityMinFilter(subargs);
@@ -252,6 +280,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "get");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: task IDs", "task");
             std.process.exit(exit_code);
@@ -306,9 +338,17 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         if (has_error) {
             std.process.exit(ExitCode.NOT_FOUND);
         }
-    } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
+    } else if (std.mem.eql(u8, subcmd, "create") or std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "create");
+            return;
+        }
         try handleTaskAdd(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "status") or std.mem.eql(u8, subcmd, "stat")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "set-status");
+            return;
+        }
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or status", "task");
             std.process.exit(exit_code);
@@ -339,6 +379,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "prio") or std.mem.eql(u8, subcmd, "priority")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "set-priority");
+            return;
+        }
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or priority value", "task");
             std.process.exit(exit_code);
@@ -379,6 +423,10 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "sev") or std.mem.eql(u8, subcmd, "severity")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "set-severity");
+            return;
+        }
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: task IDs and/or severity value", "task");
             std.process.exit(exit_code);
@@ -419,8 +467,16 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "edit")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "edit");
+            return;
+        }
         try handleTaskEdit(allocator, subargs);
     } else if (std.mem.eql(u8, subcmd, "delete") or std.mem.eql(u8, subcmd, "rm")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("task", "remove");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: task IDs", "task");
             std.process.exit(exit_code);
@@ -537,10 +593,8 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (description == null or action == null or expected_result == null) {
-        const err_json = try json.errorResponse(allocator, "INVALID_INPUT", "Missing required fields. Usage: rmp task add -d <description> -a <action> -e <expected_result> [-p priority] [-s severity] [-sp specialists]");
-        defer allocator.free(err_json);
-        printStderr("{s}\n", .{err_json});
-        std.process.exit(ExitCode.MISUSE);
+        const exit_code = printErrorWithSubcommandHelp("INVALID_INPUT", "Missing required options: --description, --action, --expected-result", "task", "create");
+        std.process.exit(exit_code);
     }
 
     const input = task.TaskInput{
@@ -687,6 +741,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
     const subargs = args[1..];
 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "list");
+            return;
+        }
         const status_filter = getSprintStatusFilter(subargs);
         const result = try sprint.listSprints(allocator, status_filter);
         defer allocator.free(result);
@@ -696,6 +754,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "get")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "get");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -712,6 +774,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "tasks")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "tasks");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -728,7 +794,11 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             std.process.exit(ExitCode.NOT_FOUND);
         }
         printStdout("{s}\n", .{result});
-    } else if (std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
+    } else if (std.mem.eql(u8, subcmd, "create") or std.mem.eql(u8, subcmd, "add") or std.mem.eql(u8, subcmd, "new")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "create");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint description", "sprint");
             std.process.exit(exit_code);
@@ -743,6 +813,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "open") or std.mem.eql(u8, subcmd, "start")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "start");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -757,6 +831,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "close")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "close");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -771,6 +849,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "reopen")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "reopen");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -785,6 +867,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         };
         // Success: no output
     } else if (std.mem.eql(u8, subcmd, "stats")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "stats");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID", "sprint");
             std.process.exit(exit_code);
@@ -801,6 +887,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "update") or std.mem.eql(u8, subcmd, "upd")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "update");
+            return;
+        }
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or description", "sprint");
             std.process.exit(exit_code);
@@ -816,7 +906,11 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             std.process.exit(exit_code);
         };
         // Success: no output
-    } else if (std.mem.eql(u8, subcmd, "add-task") or std.mem.eql(u8, subcmd, "add-tasks") or std.mem.eql(u8, subcmd, "add")) {
+    } else if (std.mem.eql(u8, subcmd, "add-tasks") or std.mem.eql(u8, subcmd, "add-task")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "add-tasks");
+            return;
+        }
         if (subargs.len < 2) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or task IDs", "sprint");
             std.process.exit(exit_code);
@@ -850,6 +944,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             std.process.exit(ExitCode.NOT_FOUND);
         }
     } else if (std.mem.eql(u8, subcmd, "remove-task") or std.mem.eql(u8, subcmd, "remove-tasks") or std.mem.eql(u8, subcmd, "rm-tasks")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "remove-tasks");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: sprint ID and/or task IDs", "sprint");
             std.process.exit(exit_code);
@@ -885,6 +983,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             std.process.exit(ExitCode.NOT_FOUND);
         }
     } else if (std.mem.eql(u8, subcmd, "move-tasks") or std.mem.eql(u8, subcmd, "mv-tasks")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "move-tasks");
+            return;
+        }
         if (subargs.len < 3) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameters: from sprint ID, to sprint ID, and/or task IDs", "sprint");
             std.process.exit(exit_code);
@@ -921,6 +1023,10 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             std.process.exit(ExitCode.NOT_FOUND);
         }
     } else if (std.mem.eql(u8, subcmd, "remove") or std.mem.eql(u8, subcmd, "rm")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("sprint", "remove");
+            return;
+        }
         if (subargs.len < 1) {
             const exit_code = printErrorWithHelp(allocator, "INVALID_INPUT", "Missing required parameter: sprint ID(s)", "sprint");
             std.process.exit(exit_code);
@@ -972,6 +1078,10 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
     const subargs = args[1..];
 
     if (std.mem.eql(u8, subcmd, "list") or std.mem.eql(u8, subcmd, "ls")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("audit", "list");
+            return;
+        }
         // Parse flags for list command
         var options = audit.AuditListOptions{};
 
@@ -1053,6 +1163,10 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "history") or std.mem.eql(u8, subcmd, "hist")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("audit", "history");
+            return;
+        }
         // Parse flags for history command
         var entity_type: ?[]const u8 = null;
         var entity_id: ?i64 = null;
@@ -1112,6 +1226,10 @@ fn handleAuditCommand(allocator: std.mem.Allocator, args: []const []const u8) !v
         }
         printStdout("{s}\n", .{result});
     } else if (std.mem.eql(u8, subcmd, "stats")) {
+        if (subargs.len > 0 and (std.mem.eql(u8, subargs[0], "-h") or std.mem.eql(u8, subargs[0], "--help"))) {
+            printSubcommandHelp("audit", "stats");
+            return;
+        }
         // Parse flags for stats command
         var since_filter: ?[]const u8 = null;
         var until_filter: ?[]const u8 = null;
@@ -1310,69 +1428,123 @@ test "getStatusFilter extracts status" {
 fn printCommandHelp(allocator: std.mem.Allocator, command: []const u8) void {
     if (std.mem.eql(u8, command, "roadmap")) {
         const roadmap_help =
-            \\{
-            \\  "success": true,
-            \\  "data": {
-            \\    "command": "roadmap",
-            \\    "description": "Roadmap management commands",
-            \\    "subcommands": [
-            \\      { "name": "list", "alias": "ls", "description": "List all roadmaps" },
-            \\      { "name": "create", "alias": "new", "description": "Create a new roadmap", "options": [{"long": "--force", "description": "Overwrite existing"}] },
-            \\      { "name": "remove", "alias": "rm", "description": "Delete a roadmap" },
-            \\      { "name": "use", "description": "Set default roadmap" }
-            \\    ]
-            \\  }
-            \\}
+            \\usage: rmp roadmap [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage roadmaps - the top-level containers for tasks and sprints.
+            \\Each roadmap is stored as an independent SQLite database in ~/.roadmaps/
+            \\
+            \\Subcommands:
+            \\   list       List all existing roadmaps
+            \\              (alias: ls)
+            \\
+            \\   create     Create a new roadmap
+            \\              (alias: new)
+            \\
+            \\   remove     Remove a roadmap permanently
+            \\              (alias: rm, delete)
+            \\
+            \\   use        Select a roadmap as default for subsequent commands
+            \\
+            \\See 'rmp roadmap <subcommand> --help' for more information.
         ;
         printStdout("{s}\n", .{roadmap_help});
     } else if (std.mem.eql(u8, command, "task")) {
         const task_help =
-            \\{
-            \\  "success": true,
-            \\  "data": {
-            \\    "command": "task",
-            \\    "description": "Task management commands",
-            \\    "subcommands": [
-            \\      { "name": "list", "alias": "ls", "description": "List tasks", "options": [{"short": "-s", "long": "--status", "description": "Filter by status"}] },
-            \\      { "name": "get", "description": "Get task details", "args": "<ids>" },
-            \\      { "name": "add", "alias": "new", "description": "Create task", "options": [
-            \\        {"short": "-d", "long": "--description", "required": true},
-            \\        {"short": "-a", "long": "--action", "required": true},
-            \\        {"short": "-e", "long": "--expected", "required": true},
-            \\        {"short": "-p", "long": "--priority", "description": "0-9"},
-            \\        {"short": "-s", "long": "--severity", "description": "0-9"}
-            \\      ]},
-            \\      { "name": "status", "alias": "stat", "description": "Change status", "args": "<ids> <status>" },
-            \\      { "name": "prio", "description": "Change priority", "args": "<ids> <0-9>" },
-            \\      { "name": "sev", "description": "Change severity", "args": "<ids> <0-9>" },
-            \\      { "name": "edit", "description": "Update task fields" },
-            \\      { "name": "delete", "alias": "rm", "description": "Remove tasks", "args": "<ids>" }
-            \\    ]
-            \\  }
-            \\}
+            \\usage: rmp task [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage tasks within a roadmap. Tasks track work with status,
+            \\priority, severity, and detailed descriptions.
+            \\
+            \\Subcommands:
+            \\   list       List tasks in the selected roadmap
+            \\              (alias: ls)
+            \\
+            \\   create     Create a new task
+            \\              (alias: new)
+            \\
+            \\   get        Get detailed information about task(s)
+            \\
+            \\   set-status Change task status
+            \\              (alias: stat)
+            \\
+            \\   set-priority
+            \\              Change task priority (0-9)
+            \\              (alias: prio)
+            \\
+            \\   set-severity
+            \\              Change task severity (0-9)
+            \\              (alias: sev)
+            \\
+            \\   remove     Remove task(s) permanently
+            \\              (alias: rm)
+            \\
+            \\See 'rmp task <subcommand> --help' for more information.
         ;
         printStdout("{s}\n", .{task_help});
     } else if (std.mem.eql(u8, command, "sprint")) {
         const sprint_help =
-            \\{
-            \\  "success": true,
-            \\  "data": {
-            \\    "command": "sprint",
-            \\    "description": "Sprint management commands",
-            \\    "subcommands": [
-            \\      { "name": "list", "alias": "ls", "description": "List sprints" },
-            \\      { "name": "add", "alias": "new", "description": "Create sprint", "args": "<description>" },
-            \\      { "name": "open", "alias": "start", "description": "Start a sprint", "args": "<id>" },
-            \\      { "name": "close", "description": "Close a sprint", "args": "<id>" },
-            \\      { "name": "add-task", "description": "Add task to sprint", "args": "<sprint_id> <task_ids>" },
-            \\      { "name": "remove-task", "alias": "rm-tasks", "description": "Remove task from sprint", "args": "<task_ids>" },
-            \\      { "name": "move-tasks", "alias": "mv-tasks", "description": "Move tasks between sprints", "args": "<from_id> <to_id> <task_ids>" },
-            \\      { "name": "stats", "description": "Get sprint statistics", "args": "<id>" }
-            \\    ]
-            \\  }
-            \\}
+            \\usage: rmp sprint [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage sprints within a roadmap. Sprints group tasks into time-boxed
+            \\iterations with lifecycle management (PENDING → OPEN → CLOSED).
+            \\
+            \\Subcommands:
+            \\   list       List sprints in the selected roadmap
+            \\              (alias: ls)
+            \\
+            \\   get        Get detailed information about a sprint
+            \\
+            \\   tasks      List tasks assigned to a sprint
+            \\
+            \\   create     Create a new sprint
+            \\              (alias: new)
+            \\
+            \\   add-tasks  Add tasks to a sprint
+            \\              (alias: add)
+            \\
+            \\   remove-tasks
+            \\              Remove tasks from a sprint
+            \\              (alias: rm-tasks)
+            \\
+            \\   move-tasks Move tasks between sprints
+            \\              (alias: mv-tasks)
+            \\
+            \\   start      Start a sprint (PENDING → OPEN)
+            \\
+            \\   close      Close a sprint (OPEN → CLOSED)
+            \\
+            \\   reopen     Reopen a closed sprint (CLOSED → OPEN)
+            \\
+            \\   update     Update sprint description
+            \\              (alias: upd)
+            \\
+            \\   stats      Show sprint statistics
+            \\
+            \\   remove     Remove a sprint
+            \\              (alias: rm)
+            \\
+            \\See 'rmp sprint <subcommand> --help' for more information.
         ;
         printStdout("{s}\n", .{sprint_help});
+    } else if (std.mem.eql(u8, command, "audit")) {
+        const audit_help =
+            \\usage: rmp audit [-h | --help] <subcommand> [<args>]
+            \\
+            \\View audit log and entity history. All changes to tasks and sprints
+            \\are automatically logged for traceability.
+            \\
+            \\Subcommands:
+            \\   list       List audit log entries
+            \\              (alias: ls)
+            \\
+            \\   history    View history for a specific entity
+            \\              (alias: hist)
+            \\
+            \\   stats      Show audit statistics
+            \\
+            \\See 'rmp audit <subcommand> --help' for more information.
+        ;
+        printStdout("{s}\n", .{audit_help});
     } else {
         printUsage(allocator);
     }
@@ -1381,141 +1553,707 @@ fn printCommandHelp(allocator: std.mem.Allocator, command: []const u8) void {
 fn printCommandHelpStderr(allocator: std.mem.Allocator, command: []const u8) void {
     if (std.mem.eql(u8, command, "roadmap")) {
         const roadmap_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "roadmap",
-            \\\    "description": "Roadmap management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List all roadmaps" },
-            \\\      { "name": "create", "alias": "new", "description": "Create a new roadmap", "options": [{"long": "--force", "description": "Overwrite existing"}] },
-            \\\      { "name": "remove", "alias": "rm", "description": "Delete a roadmap" },
-            \\\      { "name": "use", "description": "Set default roadmap" }
-            \\\    ]
-            \\\  }
-            \\\}
+            \\usage: rmp roadmap [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage roadmaps - the top-level containers for tasks and sprints.
+            \\Each roadmap is stored as an independent SQLite database in ~/.roadmaps/
+            \\
+            \\Subcommands:
+            \\   list       List all existing roadmaps
+            \\              (alias: ls)
+            \\
+            \\   create     Create a new roadmap
+            \\              (alias: new)
+            \\
+            \\   remove     Remove a roadmap permanently
+            \\              (alias: rm, delete)
+            \\
+            \\   use        Select a roadmap as default for subsequent commands
+            \\
+            \\See 'rmp roadmap <subcommand> --help' for more information.
         ;
         printStderr("{s}\n", .{roadmap_help});
     } else if (std.mem.eql(u8, command, "task")) {
         const task_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "task",
-            \\\    "description": "Task management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List tasks", "options": [{"short": "-s", "long": "--status", "description": "Filter by status"}] },
-            \\\      { "name": "get", "description": "Get task details", "args": "<ids>" },
-            \\\      { "name": "add", "alias": "new", "description": "Create task", "options": [
-            \\\        {"short": "-d", "long": "--description", "required": true},
-            \\\        {"short": "-a", "long": "--action", "required": true},
-            \\\        {"short": "-e", "long": "--expected", "required": true},
-            \\\        {"short": "-p", "long": "--priority", "description": "0-9"},
-            \\\        {"short": "-s", "long": "--severity", "description": "0-9"}
-            \\\      ]},
-            \\\      { "name": "status", "alias": "stat", "description": "Change status", "args": "<ids> <status>" },
-            \\\      { "name": "prio", "description": "Change priority", "args": "<ids> <0-9>" },
-            \\\      { "name": "sev", "description": "Change severity", "args": "<ids> <0-9>" },
-            \\\      { "name": "edit", "description": "Update task fields" },
-            \\\      { "name": "delete", "alias": "rm", "description": "Remove tasks", "args": "<ids>" }
-            \\\    ]
-            \\\  }
-            \\\}
+            \\usage: rmp task [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage tasks within a roadmap. Tasks track work with status,
+            \\priority, severity, and detailed descriptions.
+            \\
+            \\Subcommands:
+            \\   list       List tasks in the selected roadmap
+            \\              (alias: ls)
+            \\
+            \\   create     Create a new task
+            \\              (alias: new)
+            \\
+            \\   get        Get detailed information about task(s)
+            \\
+            \\   set-status Change task status
+            \\              (alias: stat)
+            \\
+            \\   set-priority
+            \\              Change task priority (0-9)
+            \\              (alias: prio)
+            \\
+            \\   set-severity
+            \\              Change task severity (0-9)
+            \\              (alias: sev)
+            \\
+            \\   remove     Remove task(s) permanently
+            \\              (alias: rm)
+            \\
+            \\See 'rmp task <subcommand> --help' for more information.
         ;
         printStderr("{s}\n", .{task_help});
     } else if (std.mem.eql(u8, command, "sprint")) {
         const sprint_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "sprint",
-            \\\    "description": "Sprint management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List sprints", "options": [{"short": "-s", "long": "--status", "description": "Filter by status"}] },
-            \\\      { "name": "get", "description": "Get sprint details", "args": "<id>" },
-            \\\      { "name": "tasks", "description": "List tasks in sprint", "args": "<id>" },
-            \\\      { "name": "add", "alias": "new", "description": "Create sprint", "args": "<description>" },
-            \\\      { "name": "open", "alias": "start", "description": "Start sprint" },
-            \\\      { "name": "close", "description": "Close sprint" },
-            \\\      { "name": "reopen", "description": "Reopen sprint" },
-            \\\      { "name": "update", "alias": "upd", "description": "Update sprint description", "args": "<id> <description>" },
-            \\\      { "name": "add-task", "alias": "add-tasks", "description": "Add tasks to sprint", "args": "<sprint-id> <task-ids>" },
-            \\\      { "name": "remove-task", "alias": "rm-tasks", "description": "Remove tasks from sprint", "args": "<sprint-id> <task-ids>" },
-            \\\      { "name": "move-tasks", "alias": "mv-tasks", "description": "Move tasks between sprints", "args": "<from-sprint> <to-sprint> <task-ids>" },
-            \\\      { "name": "remove", "alias": "rm", "description": "Delete sprint(s)", "args": "<ids>" },
-            \\\      { "name": "stats", "description": "Get sprint statistics", "args": "<id>" }
-            \\\    ]
-            \\\  }
-            \\\}
+            \\usage: rmp sprint [-h | --help] <subcommand> [<args>]
+            \\
+            \\Manage sprints within a roadmap. Sprints group tasks into time-boxed
+            \\iterations with lifecycle management (PENDING → OPEN → CLOSED).
+            \\
+            \\Subcommands:
+            \\   list       List sprints in the selected roadmap
+            \\              (alias: ls)
+            \\
+            \\   get        Get detailed information about a sprint
+            \\
+            \\   tasks      List tasks assigned to a sprint
+            \\
+            \\   create     Create a new sprint
+            \\              (alias: new)
+            \\
+            \\   add-tasks  Add tasks to a sprint
+            \\              (alias: add)
+            \\
+            \\   remove-tasks
+            \\              Remove tasks from a sprint
+            \\              (alias: rm-tasks)
+            \\
+            \\   move-tasks Move tasks between sprints
+            \\              (alias: mv-tasks)
+            \\
+            \\   start      Start a sprint (PENDING → OPEN)
+            \\
+            \\   close      Close a sprint (OPEN → CLOSED)
+            \\
+            \\   reopen     Reopen a closed sprint (CLOSED → OPEN)
+            \\
+            \\   update     Update sprint description
+            \\              (alias: upd)
+            \\
+            \\   stats      Show sprint statistics
+            \\
+            \\   remove     Remove a sprint
+            \\              (alias: rm)
+            \\
+            \\See 'rmp sprint <subcommand> --help' for more information.
         ;
         printStderr("{s}\n", .{sprint_help});
+    } else if (std.mem.eql(u8, command, "audit")) {
+        const audit_help =
+            \\usage: rmp audit [-h | --help] <subcommand> [<args>]
+            \\
+            \\View audit log and entity history. All changes to tasks and sprints
+            \\are automatically logged for traceability.
+            \\
+            \\Subcommands:
+            \\   list       List audit log entries
+            \\              (alias: ls)
+            \\
+            \\   history    View history for a specific entity
+            \\              (alias: hist)
+            \\
+            \\   stats      Show audit statistics
+            \\
+            \\See 'rmp audit <subcommand> --help' for more information.
+        ;
+        printStderr("{s}\n", .{audit_help});
     } else {
         printUsageStderr(allocator);
     }
 }
 
+// ============== SUBCOMMAND HELP FUNCTIONS ==============
+
+fn printSubcommandHelp(command: []const u8, subcommand: []const u8) void {
+    if (std.mem.eql(u8, command, "roadmap")) {
+        if (std.mem.eql(u8, subcommand, "list") or std.mem.eql(u8, subcommand, "ls")) {
+            const help =
+                \\usage: rmp roadmap list [-h | --help]
+                \\
+                \\List all existing roadmaps in ~/.roadmaps/
+                \\
+                \\Output: JSON array of roadmap objects
+                \\
+                \\Example:
+                \\   rmp roadmap list
+                \\   rmp road ls
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "create") or std.mem.eql(u8, subcommand, "new")) {
+            const help =
+                \\usage: rmp roadmap create [-h | --help] [--force] <name>
+                \\
+                \\Create a new roadmap with the given name.
+                \\The roadmap will be stored as ~/.roadmaps/<name>.db
+                \\
+                \\Options:
+                \\   --force    Overwrite if roadmap already exists
+                \\
+                \\Arguments:
+                \\   <name>     Name for the new roadmap (alphanumeric, hyphens, underscores)
+                \\
+                \\Example:
+                \\   rmp roadmap create project1
+                \\   rmp road new myproject --force
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "remove") or std.mem.eql(u8, subcommand, "rm") or std.mem.eql(u8, subcommand, "delete")) {
+            const help =
+                \\usage: rmp roadmap remove [-h | --help] <name>
+                \\
+                \\Remove a roadmap permanently. This action cannot be undone.
+                \\
+                \\Arguments:
+                \\   <name>     Name of the roadmap to remove
+                \\
+                \\Example:
+                \\   rmp roadmap remove project1
+                \\   rmp road rm oldproject
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "use")) {
+            const help =
+                \\usage: rmp roadmap use [-h | --help] <name>
+                \\
+                \\Select a roadmap as the default for subsequent commands.
+                \\This avoids repeating --roadmap flag in every command.
+                \\
+                \\Arguments:
+                \\   <name>     Name of the roadmap to select
+                \\
+                \\Example:
+                \\   rmp roadmap use project1
+                \\   rmp road use myproject
+            ;
+            printStdout("{s}\n", .{help});
+        } else {
+            printCommandHelp(std.heap.page_allocator, command);
+        }
+    } else if (std.mem.eql(u8, command, "task")) {
+        if (std.mem.eql(u8, subcommand, "list") or std.mem.eql(u8, subcommand, "ls")) {
+            const help =
+                \\usage: rmp task list [-h | --help] [-r <name>] [-s <status>] [-p <n>] [--severity <n>] [-l <n>]
+                \\
+                \\List tasks in the selected roadmap.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required if no default set)
+                \\   -s, --status <status>  Filter by status: BACKLOG, SPRINT, DOING, TESTING, COMPLETED
+                \\   -p, --priority <n>     Filter by minimum priority (0-9)
+                \\       --severity <n>     Filter by minimum severity (0-9)
+                \\   -l, --limit <n>        Limit number of results
+                \\
+                \\Output: JSON array of task objects
+                \\
+                \\Examples:
+                \\   rmp task list -r project1
+                \\   rmp task ls -r project1 -s DOING
+                \\   rmp task ls -r project1 -p 5 -l 20
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "create") or std.mem.eql(u8, subcommand, "new") or std.mem.eql(u8, subcommand, "add")) {
+            const help =
+                \\usage: rmp task create [-h | --help] -r <name> -d <desc> -a <action> -e <result> [-p <n>] [--severity <n>] [--specialists <list>]
+                \\
+                \\Create a new task in the specified roadmap.
+                \\
+                \\Required Options:
+                \\   -r, --roadmap <name>           Roadmap name
+                \\   -d, --description <desc>         Task description
+                \\   -a, --action <action>            Technical action to perform
+                \\   -e, --expected-result <result>   Expected outcome
+                \\
+                \\Optional Options:
+                \\   -p, --priority <n>               Priority 0-9 (default: 0)
+                \\       --severity <n>               Severity 0-9 (default: 0)
+                \\       --specialists <list>         Comma-separated specialist tags
+                \\
+                \\Output: JSON object with task ID
+                \\
+                \\Examples:
+                \\   rmp task create -r project1 -d "Fix login bug" -a "Debug auth" -e "Login works"
+                \\   rmp task new -r project1 -d "Update docs" -a "Write README" -e "Docs complete" -p 5
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "get")) {
+            const help =
+                \\usage: rmp task get [-h | --help] -r <name> <id>[,<id>,...]
+                \\
+                \\Get detailed information about one or more tasks.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>[,<id>,...]        Comma-separated task IDs (no spaces)
+                \\
+                \\Output: JSON array of task objects
+                \\
+                \\Examples:
+                \\   rmp task get -r project1 42
+                \\   rmp task get -r project1 1,2,3,10
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "set-status") or std.mem.eql(u8, subcommand, "status") or std.mem.eql(u8, subcommand, "stat")) {
+            const help =
+                \\usage: rmp task set-status [-h | --help] -r <name> <id>[,<id>,...] <state>
+                \\
+                \\Change the status of one or more tasks.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>[,<id>,...]        Comma-separated task IDs (no spaces)
+                \\   <state>                New status: BACKLOG, SPRINT, DOING, TESTING, COMPLETED
+                \\
+                \\Status Flow:
+                \\   BACKLOG → SPRINT → DOING → TESTING → COMPLETED
+                \\
+                \\Examples:
+                \\   rmp task set-status -r project1 42 DOING
+                \\   rmp task stat -r project1 1,2,3 COMPLETED
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "set-priority") or std.mem.eql(u8, subcommand, "priority") or std.mem.eql(u8, subcommand, "prio")) {
+            const help =
+                \\usage: rmp task set-priority [-h | --help] -r <name> <id>[,<id>,...] <priority>
+                \\
+                \\Change the priority of one or more tasks.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>[,<id>,...]        Comma-separated task IDs (no spaces)
+                \\   <priority>             Priority value 0-9
+                \\
+                \\Priority Scale:
+                \\   0 = low urgency, 9 = maximum urgency (Product Owner perspective)
+                \\
+                \\Examples:
+                \\   rmp task set-priority -r project1 42 9
+                \\   rmp task prio -r project1 1,2,3 5
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "set-severity") or std.mem.eql(u8, subcommand, "severity") or std.mem.eql(u8, subcommand, "sev")) {
+            const help =
+                \\usage: rmp task set-severity [-h | --help] -r <name> <id>[,<id>,...] <severity>
+                \\
+                \\Change the severity of one or more tasks.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>[,<id>,...]        Comma-separated task IDs (no spaces)
+                \\   <severity>             Severity value 0-9
+                \\
+                \\Severity Scale:
+                \\   0 = minimal impact, 9 = critical impact (Dev Team perspective)
+                \\
+                \\Examples:
+                \\   rmp task set-severity -r project1 42 5
+                \\   rmp task sev -r project1 1,2,3 9
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "remove") or std.mem.eql(u8, subcommand, "rm") or std.mem.eql(u8, subcommand, "delete")) {
+            const help =
+                \\usage: rmp task remove [-h | --help] -r <name> <id>[,<id>,...]
+                \\
+                \\Remove one or more tasks permanently. This action cannot be undone.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>[,<id>,...]        Comma-separated task IDs (no spaces)
+                \\
+                \\Examples:
+                \\   rmp task remove -r project1 42
+                \\   rmp task rm -r project1 1,2,3
+            ;
+            printStdout("{s}\n", .{help});
+        } else {
+            printCommandHelp(std.heap.page_allocator, command);
+        }
+    } else if (std.mem.eql(u8, command, "sprint")) {
+        if (std.mem.eql(u8, subcommand, "list") or std.mem.eql(u8, subcommand, "ls")) {
+            const help =
+                \\usage: rmp sprint list [-h | --help] [-r <name>] [-s <status>]
+                \\
+                \\List sprints in the selected roadmap.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required if no default set)
+                \\   -s, --status <status>  Filter by status: PENDING, OPEN, CLOSED
+                \\
+                \\Output: JSON array of sprint objects
+                \\
+                \\Examples:
+                \\   rmp sprint list -r project1
+                \\   rmp sprint ls -r project1 -s OPEN
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "get")) {
+            const help =
+                \\usage: rmp sprint get [-h | --help] -r <name> <id>
+                \\
+                \\Get detailed information about a specific sprint.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID
+                \\
+                \\Output: JSON sprint object
+                \\
+                \\Example:
+                \\   rmp sprint get -r project1 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "tasks")) {
+            const help =
+                \\usage: rmp sprint tasks [-h | --help] -r <name> <sprint-id> [-s <status>]
+                \\
+                \\List tasks assigned to a specific sprint.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\   -s, --status <status>  Filter by task status
+                \\
+                \\Arguments:
+                \\   <sprint-id>            Sprint ID
+                \\
+                \\Output: JSON array of task objects
+                \\
+                \\Examples:
+                \\   rmp sprint tasks -r project1 1
+                \\   rmp sprint tasks -r project1 1 -s DOING
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "create") or std.mem.eql(u8, subcommand, "new") or std.mem.eql(u8, subcommand, "add")) {
+            const help =
+                \\usage: rmp sprint create [-h | --help] -r <name> -d <description>
+                \\
+                \\Create a new sprint in the specified roadmap.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>        Roadmap name (required)
+                \\   -d, --description <desc>     Sprint description
+                \\
+                \\Output: JSON object with sprint ID
+                \\
+                \\Example:
+                \\   rmp sprint create -r project1 -d "Sprint 1 - Initial Setup"
+                \\   rmp sprint new -r project1 -d "Sprint 2 - Features"
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "add-tasks") or std.mem.eql(u8, subcommand, "add-task")) {
+            const help =
+                \\usage: rmp sprint add-tasks [-h | --help] -r <name> <sprint-id> <task-ids>
+                \\
+                \\Add tasks to a sprint. Tasks must be in BACKLOG status.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <sprint-id>            Sprint ID to add tasks to
+                \\   <task-ids>             Comma-separated task IDs (no spaces)
+                \\
+                \\Examples:
+                \\   rmp sprint add-tasks -r project1 1 10,11,12
+                \\   rmp sprint add -r project1 2 5,6,7,8
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "remove-tasks") or std.mem.eql(u8, subcommand, "remove-task") or std.mem.eql(u8, subcommand, "rm-tasks")) {
+            const help =
+                \\usage: rmp sprint remove-tasks [-h | --help] -r <name> <sprint-id> <task-ids>
+                \\
+                \\Remove tasks from a sprint. Tasks return to BACKLOG status.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <sprint-id>            Sprint ID to remove tasks from
+                \\   <task-ids>             Comma-separated task IDs (no spaces)
+                \\
+                \\Examples:
+                \\   rmp sprint remove-tasks -r project1 1 10,11,12
+                \\   rmp sprint rm-tasks -r project1 1 5,6
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "move-tasks") or std.mem.eql(u8, subcommand, "mv-tasks")) {
+            const help =
+                \\usage: rmp sprint move-tasks [-h | --help] -r <name> <from-sprint> <to-sprint> <task-ids>
+                \\
+                \\Move tasks from one sprint to another.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <from-sprint>          Source sprint ID
+                \\   <to-sprint>            Destination sprint ID
+                \\   <task-ids>             Comma-separated task IDs (no spaces)
+                \\
+                \\Examples:
+                \\   rmp sprint move-tasks -r project1 1 2 10,11,12
+                \\   rmp sprint mv-tasks -r project1 2 3 5,6,7
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "start") or std.mem.eql(u8, subcommand, "open")) {
+            const help =
+                \\usage: rmp sprint start [-h | --help] -r <name> <id>
+                \\
+                \\Start a sprint, changing its status from PENDING to OPEN.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID to start
+                \\
+                \\Example:
+                \\   rmp sprint start -r project1 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "close")) {
+            const help =
+                \\usage: rmp sprint close [-h | --help] -r <name> <id>
+                \\
+                \\Close a sprint, changing its status from OPEN to CLOSED.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID to close
+                \\
+                \\Example:
+                \\   rmp sprint close -r project1 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "reopen")) {
+            const help =
+                \\usage: rmp sprint reopen [-h | --help] -r <name> <id>
+                \\
+                \\Reopen a closed sprint, changing its status from CLOSED to OPEN.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID to reopen
+                \\
+                \\Example:
+                \\   rmp sprint reopen -r project1 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "update") or std.mem.eql(u8, subcommand, "upd")) {
+            const help =
+                \\usage: rmp sprint update [-h | --help] -r <name> <id> -d <description>
+                \\
+                \\Update a sprint's description.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>        Roadmap name (required)
+                \\   -d, --description <desc>     New description
+                \\
+                \\Arguments:
+                \\   <id>                        Sprint ID
+                \\
+                \\Example:
+                \\   rmp sprint update -r project1 1 -d "Sprint 1 - Setup and Config"
+                \\   rmp sprint upd -r project1 1 -d "Updated description"
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "stats")) {
+            const help =
+                \\usage: rmp sprint stats [-h | --help] -r <name> <id>
+                \\
+                \\Show statistics for a sprint including task counts by status.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID
+                \\
+                \\Output: JSON statistics object
+                \\
+                \\Example:
+                \\   rmp sprint stats -r project1 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "remove") or std.mem.eql(u8, subcommand, "rm")) {
+            const help =
+                \\usage: rmp sprint remove [-h | --help] -r <name> <id>
+                \\
+                \\Remove a sprint permanently. Tasks in the sprint are not deleted.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>   Roadmap name (required)
+                \\
+                \\Arguments:
+                \\   <id>                   Sprint ID to remove
+                \\
+                \\Example:
+                \\   rmp sprint remove -r project1 1
+                \\   rmp sprint rm -r project1 2
+            ;
+            printStdout("{s}\n", .{help});
+        } else {
+            printCommandHelp(std.heap.page_allocator, command);
+        }
+    } else if (std.mem.eql(u8, command, "audit")) {
+        if (std.mem.eql(u8, subcommand, "list") or std.mem.eql(u8, subcommand, "ls")) {
+            const help =
+                \\usage: rmp audit list [-h | --help] -r <name> [-o <operation>] [-e <type>] [--entity-id <id>] [--since <date>] [--until <date>] [-l <n>]
+                \\
+                \\List audit log entries with optional filtering.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>        Roadmap name (required)
+                \\   -o, --operation <type>     Filter by operation type:
+                \\                               TASK_CREATE, TASK_UPDATE, TASK_STATUS_CHANGE,
+                \\                               TASK_PRIORITY_CHANGE, TASK_SEVERITY_CHANGE,
+                \\                               TASK_DELETE, SPRINT_CREATE, SPRINT_UPDATE,
+                \\                               SPRINT_START, SPRINT_CLOSE, SPRINT_REOPEN,
+                \\                               SPRINT_DELETE, SPRINT_TASK_ADD,
+                \\                               SPRINT_TASK_REMOVE, SPRINT_TASK_MOVE
+                \\   -e, --entity-type <type>   Filter by entity type: TASK, SPRINT
+                \\       --entity-id <id>        Filter by specific entity ID
+                \\       --since <date>          Include entries from this date (ISO 8601)
+                \\       --until <date>          Include entries until this date (ISO 8601)
+                \\   -l, --limit <n>             Limit number of results
+                \\
+                \\Output: JSON array of audit entries
+                \\
+                \\Examples:
+                \\   rmp audit list -r project1
+                \\   rmp audit ls -r project1 -o TASK_STATUS_CHANGE
+                \\   rmp audit ls -r project1 -e TASK --since 2026-03-01T00:00:00.000Z
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "history") or std.mem.eql(u8, subcommand, "hist")) {
+            const help =
+                \\usage: rmp audit history [-h | --help] -r <name> -e <type> <id>
+                \\
+                \\View complete history for a specific entity (task or sprint).
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>        Roadmap name (required)
+                \\   -e, --entity-type <type>    Entity type: TASK, SPRINT (required)
+                \\
+                \\Arguments:
+                \\   <id>                        Entity ID
+                \\
+                \\Output: JSON array of audit entries for the entity
+                \\
+                \\Examples:
+                \\   rmp audit history -r project1 -e TASK 42
+                \\   rmp audit hist -r project1 -e SPRINT 1
+            ;
+            printStdout("{s}\n", .{help});
+        } else if (std.mem.eql(u8, subcommand, "stats")) {
+            const help =
+                \\usage: rmp audit stats [-h | --help] -r <name> [--since <date>] [--until <date>]
+                \\
+                \\Show audit statistics including operation counts and trends.
+                \\
+                \\Options:
+                \\   -r, --roadmap <name>        Roadmap name (required)
+                \\       --since <date>          Include entries from this date (ISO 8601)
+                \\       --until <date>          Include entries until this date (ISO 8601)
+                \\
+                \\Output: JSON statistics object
+                \\
+                \\Examples:
+                \\   rmp audit stats -r project1
+                \\   rmp audit stats -r project1 --since 2026-03-01T00:00:00.000Z
+            ;
+            printStdout("{s}\n", .{help});
+        } else {
+            printCommandHelp(std.heap.page_allocator, command);
+        }
+    }
+}
+
 fn printUsage(allocator: std.mem.Allocator) void {
-    const help_json =
-        \\\{
-        \\\  "success": true,
-        \\\  "data": {
-        \\\    "name": "rmp",
-        \\\    "version": "1.0.0",
-        \\\    "description": "Local Roadmap Manager CLI for agentic workflows",
-        \\\    "usage": "rmp [command] [subcommand] [arguments] [options]",
-        \\\    "commands": [
-        \\\      {
-        \\\        "name": "roadmap",
-        \\\        "alias": "road",
-        \\\        "subcommands": ["list (ls)", "create (new)", "remove (rm)", "use"]
-        \\\      },
-        \\\      {
-        \\\        "name": "task",
-        \\\        "subcommands": ["list (ls)", "get", "add (new)", "status (stat)", "prio", "sev", "edit", "delete (rm)"]
-        \\\      },
-        \\\      {
-        \\\        "name": "sprint",
-        \\\        "subcommands": ["list (ls)", "get", "tasks", "add (new)", "open (start)", "close", "reopen", "stats", "update (upd)", "add-task", "remove-task (rm-tasks)", "move-tasks (mv-tasks)", "remove (rm)"]
-        \\\      }
-        \\\    ],
-        \\\    "global_flags": ["-r, --roadmap <name>", "-h, --help", "-v, --version"],
-        \\\    "notes": "All responses are JSON. All dates are ISO 8601 UTC. Most commands support bulk IDs (e.g. 1,2,3)."
-        \\\  }
-        \\\}
-    ;
     _ = allocator;
-    printStdout("{s}\n", .{help_json});
+    const help_text =
+        \\usage: rmp [-h | --help] [-v | --version] <command> [<args>]
+        \\
+        \\Local Roadmap Manager - CLI for managing technical roadmaps, tasks, and sprints
+        \\
+        \\These are common LRoadmap commands used in various situations:
+        \\
+        \\manage roadmaps
+        \\   roadmap    Create, list, and manage roadmaps
+        \\              (alias: road)
+        \\
+        \\manage tasks
+        \\   task       Create, list, and manage tasks
+        \\              Includes status, priority, and severity management
+        \\
+        \\manage sprints
+        \\   sprint     Create, manage, and track sprints
+        \\              Includes task assignment and sprint lifecycle
+        \\
+        \\view audit trail
+        \\   audit      View audit log and entity history
+        \\              (alias: aud)
+        \\
+        \\See 'rmp <command> --help' to read about a specific command.
+        \\See 'rmp <command> <subcommand> --help' for subcommand details.
+    ;
+    printStdout("{s}\n", .{help_text});
 }
 
 fn printUsageStderr(allocator: std.mem.Allocator) void {
     _ = allocator;
-    const help_json =
-        \\\{
-        \\\  "success": true,
-        \\\  "data": {
-        \\\    "name": "rmp",
-        \\\    "version": "1.0.0",
-        \\\    "description": "Local Roadmap Manager CLI for agentic workflows",
-        \\\    "usage": "rmp [command] [subcommand] [arguments] [options]",
-        \\\    "commands": [
-        \\\      {
-        \\\        "name": "roadmap",
-        \\\        "alias": "road",
-        \\\        "subcommands": ["list (ls)", "create (new)", "remove (rm)", "use"]
-        \\\      },
-        \\\      {
-        \\\        "name": "task",
-        \\\        "subcommands": ["list (ls)", "get", "add (new)", "status (stat)", "prio", "sev", "edit", "delete (rm)"]
-        \\\      },
-        \\\      {
-        \\\        "name": "sprint",
-        \\\        "subcommands": ["list (ls)", "get", "tasks", "add (new)", "open (start)", "close", "reopen", "stats", "update (upd)", "add-task", "remove-task (rm-tasks)", "move-tasks (mv-tasks)", "remove (rm)"]
-        \\\      }
-        \\\    ],
-        \\\    "global_flags": ["-r, --roadmap <name>", "-h, --help", "-v, --version"],
-        \\\    "notes": "All responses are JSON. All dates are ISO 8601 UTC. Most commands support bulk IDs (e.g. 1,2,3)."
-        \\\  }
-        \\\}
+    const help_text =
+        \\usage: rmp [-h | --help] [-v | --version] <command> [<args>]
+        \\
+        \\Local Roadmap Manager - CLI for managing technical roadmaps, tasks, and sprints
+        \\
+        \\These are common LRoadmap commands used in various situations:
+        \\
+        \\manage roadmaps
+        \\   roadmap    Create, list, and manage roadmaps
+        \\              (alias: road)
+        \\
+        \\manage tasks
+        \\   task       Create, list, and manage tasks
+        \\              Includes status, priority, and severity management
+        \\
+        \\manage sprints
+        \\   sprint     Create, manage, and track sprints
+        \\              Includes task assignment and sprint lifecycle
+        \\
+        \\view audit trail
+        \\   audit      View audit log and entity history
+        \\              (alias: aud)
+        \\
+        \\See 'rmp <command> --help' to read about a specific command.
+        \\See 'rmp <command> <subcommand> --help' for subcommand details.
     ;
-    printStderr("{s}\n", .{help_json});
+    printStderr("{s}\n", .{help_text});
 }
