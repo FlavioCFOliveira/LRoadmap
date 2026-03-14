@@ -1,22 +1,37 @@
 const std = @import("std");
 
 /// Format ISO 8601: YYYY-MM-DDTHH:mm:ss.sssZ
-pub const ISO8601_FORMAT = "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.000Z";
+pub const ISO8601_FORMAT = "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z";
 
 /// Maximum length of ISO 8601 string
 pub const ISO8601_MAX_LEN = 30;
 
-/// Returns current UTC timestamp formatted as ISO 8601 string.
+/// Returns current UTC timestamp formatted as ISO 8601 string with millisecond precision.
 /// Caller owns the returned memory.
 pub fn nowUtc(allocator: std.mem.Allocator) ![]const u8 {
-    const timestamp = std.time.timestamp();
-    return formatTimestampSeconds(allocator, timestamp);
+    const timestamp_ms = std.time.milliTimestamp();
+    return formatTimestampMillis(allocator, timestamp_ms);
 }
 
 /// Formats a Unix timestamp (in seconds) to ISO 8601 UTC string.
 /// Caller owns the returned memory.
 pub fn formatTimestampSeconds(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
+    return formatTimestampSecondsWithMillis(allocator, timestamp, 0);
+}
+
+/// Formats a Unix timestamp (in milliseconds) to ISO 8601 UTC string with millisecond precision.
+/// Caller owns the returned memory.
+pub fn formatTimestampMillis(allocator: std.mem.Allocator, timestamp_ms: i64) ![]const u8 {
+    const millis = @mod(@abs(timestamp_ms), 1000);
+    const seconds = @divTrunc(timestamp_ms, 1000);
+    return formatTimestampSecondsWithMillis(allocator, seconds, @intCast(millis));
+}
+
+/// Formats a Unix timestamp (in seconds) with explicit milliseconds to ISO 8601 UTC string.
+/// Caller owns the returned memory.
+pub fn formatTimestampSecondsWithMillis(allocator: std.mem.Allocator, timestamp: i64, millis: u16) ![]const u8 {
     const seconds = if (timestamp < 0) 0 else @as(u64, @intCast(timestamp));
+    const ms = if (millis > 999) 999 else millis;
 
     const days_since_epoch = seconds / 86400;
     const seconds_of_day = seconds % 86400;
@@ -57,6 +72,7 @@ pub fn formatTimestampSeconds(allocator: std.mem.Allocator, timestamp: i64) ![]c
         hours,
         minutes,
         secs,
+        ms,
     });
 }
 
@@ -174,6 +190,14 @@ test "formatTimestampSeconds produces correct format" {
     const result = try formatTimestampSeconds(allocator, 1710254400); // 2024-03-12T14:40:00Z
     defer allocator.free(result);
     try std.testing.expectEqualStrings("2024-03-12T14:40:00.000Z", result);
+}
+
+test "formatTimestampMillis produces correct format with milliseconds" {
+    const allocator = std.testing.allocator;
+    // 1710254400123 = 2024-03-12T14:40:00.123Z
+    const result = try formatTimestampMillis(allocator, 1710254400123);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("2024-03-12T14:40:00.123Z", result);
 }
 
 test "parseIso8601 validates correct dates" {

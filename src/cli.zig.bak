@@ -64,8 +64,8 @@ fn printError(allocator: std.mem.Allocator, code: []const u8, message: []const u
 /// Prints error and then prints help for the command to stdout
 fn printErrorWithHelp(allocator: std.mem.Allocator, code: []const u8, message: []const u8, command: []const u8) u8 {
     const exit_code = printError(allocator, code, message);
-    printStderr("\n", .{});
-    printCommandHelpStderr(allocator, command);
+    printStdout("\n", .{});
+    printCommandHelp(allocator, command);
     return exit_code;
 }
 
@@ -431,7 +431,7 @@ fn handleTaskCommand(allocator: std.mem.Allocator, args: []const []const u8) !vo
         };
         defer allocator.free(ids);
 
-        _ = task.deleteTask(allocator, ids) catch |err| {
+        task.deleteTask(allocator, ids) catch |err| {
             const err_json = json.errorResponse(allocator, "DELETE_FAILED", try std.fmt.allocPrint(allocator, "Failed to delete tasks (error: {any})", .{err})) catch |e| {
                 printStderr("Critical error: {any}\n", .{e});
                 std.process.exit(ExitCode.FAILURE);
@@ -751,7 +751,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
             std.process.exit(exit_code);
         };
-        _ = sprint.openSprint(allocator, id) catch |err| {
+        sprint.openSprint(allocator, id) catch |err| {
             const exit_code = printError(allocator, "SPRINT_NOT_FOUND", try std.fmt.allocPrint(allocator, "Sprint not found: {d} (error: {any})", .{ id, err }));
             std.process.exit(exit_code);
         };
@@ -765,7 +765,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
             std.process.exit(exit_code);
         };
-        _ = sprint.closeSprint(allocator, id) catch |err| {
+        sprint.closeSprint(allocator, id) catch |err| {
             const exit_code = printError(allocator, "SPRINT_NOT_FOUND", try std.fmt.allocPrint(allocator, "Sprint not found: {d} (error: {any})", .{ id, err }));
             std.process.exit(exit_code);
         };
@@ -779,7 +779,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
             const exit_code = printError(allocator, "INVALID_INPUT", try std.fmt.allocPrint(allocator, "Invalid sprint ID: {s}", .{subargs[0]}));
             std.process.exit(exit_code);
         };
-        _ = sprint.reopenSprint(allocator, id) catch |err| {
+        sprint.reopenSprint(allocator, id) catch |err| {
             const exit_code = printError(allocator, "SPRINT_NOT_FOUND", try std.fmt.allocPrint(allocator, "Sprint not found: {d} (error: {any})", .{ id, err }));
             std.process.exit(exit_code);
         };
@@ -811,7 +811,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
         };
         const description = try std.mem.join(allocator, " ", subargs[1..]);
         defer allocator.free(description);
-        _ = sprint.updateSprint(allocator, id, description) catch |err| {
+        sprint.updateSprint(allocator, id, description) catch |err| {
             const exit_code = printError(allocator, "UPDATE_FAILED", try std.fmt.allocPrint(allocator, "Failed to update sprint: {d} (error: {any})", .{ id, err }));
             std.process.exit(exit_code);
         };
@@ -839,7 +839,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         var has_error = false;
         for (task_ids) |task_id| {
-            _ = sprint.addTaskToSprint(allocator, sprint_id, task_id) catch |err| {
+            sprint.addTaskToSprint(allocator, sprint_id, task_id) catch |err| {
                 printStderr("Failed to add task {d} to sprint {d} (error: {any})\n", .{ task_id, sprint_id, err });
                 has_error = true;
                 continue;
@@ -874,7 +874,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         var has_error_rm = false;
         for (task_ids) |task_id| {
-            _ = sprint.removeTaskFromSprint(allocator, task_id) catch |err| {
+            sprint.removeTaskFromSprint(allocator, task_id) catch |err| {
                 printStderr("Failed to remove task {d} from sprint (error: {any})\n", .{ task_id, err });
                 has_error_rm = true;
                 continue;
@@ -910,7 +910,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         var has_error_mv = false;
         for (task_ids) |task_id| {
-            _ = sprint.moveTaskBetweenSprints(allocator, task_id, new_sprint_id) catch |err| {
+            sprint.moveTaskBetweenSprints(allocator, task_id, new_sprint_id) catch |err| {
                 printStderr("Failed to move task {d} to sprint {d} (error: {any})\n", .{ task_id, new_sprint_id, err });
                 has_error_mv = true;
                 continue;
@@ -939,7 +939,7 @@ fn handleSprintCommand(allocator: std.mem.Allocator, args: []const []const u8) !
 
         var has_error_sprint_rm = false;
         for (ids) |id| {
-            _ = sprint.deleteSprint(allocator, id) catch |err| {
+            sprint.deleteSprint(allocator, id) catch |err| {
                 printStderr("Failed to delete sprint {d} (error: {any})\n", .{ id, err });
                 has_error_sprint_rm = true;
                 continue;
@@ -1378,144 +1378,35 @@ fn printCommandHelp(allocator: std.mem.Allocator, command: []const u8) void {
     }
 }
 
-fn printCommandHelpStderr(allocator: std.mem.Allocator, command: []const u8) void {
-    if (std.mem.eql(u8, command, "roadmap")) {
-        const roadmap_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "roadmap",
-            \\\    "description": "Roadmap management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List all roadmaps" },
-            \\\      { "name": "create", "alias": "new", "description": "Create a new roadmap", "options": [{"long": "--force", "description": "Overwrite existing"}] },
-            \\\      { "name": "remove", "alias": "rm", "description": "Delete a roadmap" },
-            \\\      { "name": "use", "description": "Set default roadmap" }
-            \\\    ]
-            \\\  }
-            \\\}
-        ;
-        printStderr("{s}\n", .{roadmap_help});
-    } else if (std.mem.eql(u8, command, "task")) {
-        const task_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "task",
-            \\\    "description": "Task management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List tasks", "options": [{"short": "-s", "long": "--status", "description": "Filter by status"}] },
-            \\\      { "name": "get", "description": "Get task details", "args": "<ids>" },
-            \\\      { "name": "add", "alias": "new", "description": "Create task", "options": [
-            \\\        {"short": "-d", "long": "--description", "required": true},
-            \\\        {"short": "-a", "long": "--action", "required": true},
-            \\\        {"short": "-e", "long": "--expected", "required": true},
-            \\\        {"short": "-p", "long": "--priority", "description": "0-9"},
-            \\\        {"short": "-s", "long": "--severity", "description": "0-9"}
-            \\\      ]},
-            \\\      { "name": "status", "alias": "stat", "description": "Change status", "args": "<ids> <status>" },
-            \\\      { "name": "prio", "description": "Change priority", "args": "<ids> <0-9>" },
-            \\\      { "name": "sev", "description": "Change severity", "args": "<ids> <0-9>" },
-            \\\      { "name": "edit", "description": "Update task fields" },
-            \\\      { "name": "delete", "alias": "rm", "description": "Remove tasks", "args": "<ids>" }
-            \\\    ]
-            \\\  }
-            \\\}
-        ;
-        printStderr("{s}\n", .{task_help});
-    } else if (std.mem.eql(u8, command, "sprint")) {
-        const sprint_help =
-            \\\{
-            \\\  "success": true,
-            \\\  "data": {
-            \\\    "command": "sprint",
-            \\\    "description": "Sprint management commands",
-            \\\    "subcommands": [
-            \\\      { "name": "list", "alias": "ls", "description": "List sprints", "options": [{"short": "-s", "long": "--status", "description": "Filter by status"}] },
-            \\\      { "name": "get", "description": "Get sprint details", "args": "<id>" },
-            \\\      { "name": "tasks", "description": "List tasks in sprint", "args": "<id>" },
-            \\\      { "name": "add", "alias": "new", "description": "Create sprint", "args": "<description>" },
-            \\\      { "name": "open", "alias": "start", "description": "Start sprint" },
-            \\\      { "name": "close", "description": "Close sprint" },
-            \\\      { "name": "reopen", "description": "Reopen sprint" },
-            \\\      { "name": "update", "alias": "upd", "description": "Update sprint description", "args": "<id> <description>" },
-            \\\      { "name": "add-task", "alias": "add-tasks", "description": "Add tasks to sprint", "args": "<sprint-id> <task-ids>" },
-            \\\      { "name": "remove-task", "alias": "rm-tasks", "description": "Remove tasks from sprint", "args": "<sprint-id> <task-ids>" },
-            \\\      { "name": "move-tasks", "alias": "mv-tasks", "description": "Move tasks between sprints", "args": "<from-sprint> <to-sprint> <task-ids>" },
-            \\\      { "name": "remove", "alias": "rm", "description": "Delete sprint(s)", "args": "<ids>" },
-            \\\      { "name": "stats", "description": "Get sprint statistics", "args": "<id>" }
-            \\\    ]
-            \\\  }
-            \\\}
-        ;
-        printStderr("{s}\n", .{sprint_help});
-    } else {
-        printUsageStderr(allocator);
-    }
-}
-
 fn printUsage(allocator: std.mem.Allocator) void {
     const help_json =
-        \\\{
-        \\\  "success": true,
-        \\\  "data": {
-        \\\    "name": "rmp",
-        \\\    "version": "1.0.0",
-        \\\    "description": "Local Roadmap Manager CLI for agentic workflows",
-        \\\    "usage": "rmp [command] [subcommand] [arguments] [options]",
-        \\\    "commands": [
-        \\\      {
-        \\\        "name": "roadmap",
-        \\\        "alias": "road",
-        \\\        "subcommands": ["list (ls)", "create (new)", "remove (rm)", "use"]
-        \\\      },
-        \\\      {
-        \\\        "name": "task",
-        \\\        "subcommands": ["list (ls)", "get", "add (new)", "status (stat)", "prio", "sev", "edit", "delete (rm)"]
-        \\\      },
-        \\\      {
-        \\\        "name": "sprint",
-        \\\        "subcommands": ["list (ls)", "get", "tasks", "add (new)", "open (start)", "close", "reopen", "stats", "update (upd)", "add-task", "remove-task (rm-tasks)", "move-tasks (mv-tasks)", "remove (rm)"]
-        \\\      }
-        \\\    ],
-        \\\    "global_flags": ["-r, --roadmap <name>", "-h, --help", "-v, --version"],
-        \\\    "notes": "All responses are JSON. All dates are ISO 8601 UTC. Most commands support bulk IDs (e.g. 1,2,3)."
-        \\\  }
-        \\\}
+        \\{
+        \\  "success": true,
+        \\  "data": {
+        \\    "name": "rmp",
+        \\    "version": "1.0.0",
+        \\    "description": "Local Roadmap Manager CLI for agentic workflows",
+        \\    "usage": "rmp [command] [subcommand] [arguments] [options]",
+        \\    "commands": [
+        \\      {
+        \\        "name": "roadmap",
+        \\        "alias": "road",
+        \\        "subcommands": ["list (ls)", "create (new)", "remove (rm)", "use"]
+        \\      },
+        \\      {
+        \\        "name": "task",
+        \\        "subcommands": ["list (ls)", "get", "add (new)", "status (stat)", "prio", "sev", "edit", "delete (rm)"]
+        \\      },
+        \\      {
+        \\        "name": "sprint",
+        \\        "subcommands": ["list (ls)", "get", "tasks", "add (new)", "open (start)", "close", "reopen", "stats", "update (upd)", "add-task", "remove-task (rm-tasks)", "move-tasks (mv-tasks)", "remove (rm)"]
+        \\      }
+        \\    ],
+        \\    "global_flags": ["-r, --roadmap <name>", "-h, --help", "-v, --version"],
+        \\    "notes": "All responses are JSON. All dates are ISO 8601 UTC. Most commands support bulk IDs (e.g. 1,2,3)."
+        \\  }
+        \\}
     ;
     _ = allocator;
     printStdout("{s}\n", .{help_json});
-}
-
-fn printUsageStderr(allocator: std.mem.Allocator) void {
-    _ = allocator;
-    const help_json =
-        \\\{
-        \\\  "success": true,
-        \\\  "data": {
-        \\\    "name": "rmp",
-        \\\    "version": "1.0.0",
-        \\\    "description": "Local Roadmap Manager CLI for agentic workflows",
-        \\\    "usage": "rmp [command] [subcommand] [arguments] [options]",
-        \\\    "commands": [
-        \\\      {
-        \\\        "name": "roadmap",
-        \\\        "alias": "road",
-        \\\        "subcommands": ["list (ls)", "create (new)", "remove (rm)", "use"]
-        \\\      },
-        \\\      {
-        \\\        "name": "task",
-        \\\        "subcommands": ["list (ls)", "get", "add (new)", "status (stat)", "prio", "sev", "edit", "delete (rm)"]
-        \\\      },
-        \\\      {
-        \\\        "name": "sprint",
-        \\\        "subcommands": ["list (ls)", "get", "tasks", "add (new)", "open (start)", "close", "reopen", "stats", "update (upd)", "add-task", "remove-task (rm-tasks)", "move-tasks (mv-tasks)", "remove (rm)"]
-        \\\      }
-        \\\    ],
-        \\\    "global_flags": ["-r, --roadmap <name>", "-h, --help", "-v, --version"],
-        \\\    "notes": "All responses are JSON. All dates are ISO 8601 UTC. Most commands support bulk IDs (e.g. 1,2,3)."
-        \\\  }
-        \\\}
-    ;
-    printStderr("{s}\n", .{help_json});
 }

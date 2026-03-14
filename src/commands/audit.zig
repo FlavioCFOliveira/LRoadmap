@@ -105,57 +105,8 @@ pub fn listAuditEntries(allocator: std.mem.Allocator, options: AuditListOptions)
     };
     defer allocator.free(entries_array);
 
-    // Build filters JSON
-    const roadmap_escaped = json_utils.escapeString(allocator, current) catch {
-        return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to escape roadmap name");
-    };
-    defer allocator.free(roadmap_escaped);
-
-    const op_val = if (options.operation) |op| blk: {
-        const escaped = json_utils.escapeString(allocator, op) catch break :blk try allocator.dupe(u8, "null");
-        break :blk escaped;
-    } else try allocator.dupe(u8, "null");
-    defer allocator.free(op_val);
-
-    const et_val = if (options.entity_type) |et| blk: {
-        const escaped = json_utils.escapeString(allocator, et) catch break :blk try allocator.dupe(u8, "null");
-        break :blk escaped;
-    } else try allocator.dupe(u8, "null");
-    defer allocator.free(et_val);
-
-    const eid_val = if (options.entity_id) |eid|
-        std.fmt.allocPrint(allocator, "{d}", .{eid}) catch try allocator.dupe(u8, "null")
-    else
-        try allocator.dupe(u8, "null");
-    defer allocator.free(eid_val);
-
-    const since_val = if (options.since) |s| blk: {
-        const escaped = json_utils.escapeString(allocator, s) catch break :blk try allocator.dupe(u8, "null");
-        break :blk escaped;
-    } else try allocator.dupe(u8, "null");
-    defer allocator.free(since_val);
-
-    const until_val = if (options.until) |u| blk: {
-        const escaped = json_utils.escapeString(allocator, u) catch break :blk try allocator.dupe(u8, "null");
-        break :blk escaped;
-    } else try allocator.dupe(u8, "null");
-    defer allocator.free(until_val);
-
-    const data_json = std.fmt.allocPrint(allocator,
-        \\{{"roadmap":{s},"count":{d},"total":{d},"filters":{{"operation":{s},"entity_type":{s},"entity_id":{s},"since":{s},"until":{s},"limit":{d},"offset":{d}}},"entries":[{s}]}}
-    , .{
-        roadmap_escaped,
-        result.entries.len,
-        result.total,
-        op_val,
-        et_val,
-        eid_val,
-        since_val,
-        until_val,
-        options.limit,
-        options.offset,
-        entries_array,
-    }) catch {
+    // Return array directly without wrapper
+    const data_json = std.fmt.allocPrint(allocator, "[{s}]", .{entries_array}) catch {
         return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to build response");
     };
     defer allocator.free(data_json);

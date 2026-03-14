@@ -1,25 +1,23 @@
 const std = @import("std");
 
-/// Creates a success response JSON string.
-/// Returns data wrapped in {"success": true, "data": {...}} format.
+/// Creates a success response.
+/// Returns data as is (simply dupes it to maintain ownership consistency if needed,
+/// but the goal is to return the direct JSON object/array).
 /// Caller owns the returned memory.
 pub fn success(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
-    // Return data wrapped in success envelope
-    return std.fmt.allocPrint(allocator, "{{\"success\":true,\"data\":{s}}}", .{data});
+    return try allocator.dupe(u8, data);
 }
 
-/// Creates an error response JSON string.
-/// Returns error wrapped in {"success": false, "error": {...}} format.
+/// Creates an error response.
 /// Caller owns the returned memory.
 pub fn errorResponse(allocator: std.mem.Allocator, code: []const u8, message: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{{\"success\":false,\"error\":{{\"code\":\"{s}\",\"message\":\"{s}\"}}}}", .{ code, message });
+    return try std.fmt.allocPrint(allocator, "{{\"code\":\"{s}\",\"message\":\"{s}\"}}", .{ code, message });
 }
 
-/// Creates an error response with details JSON string.
-/// Returns error wrapped in {"success": false, "error": {...}} format.
+/// Creates an error response with details.
 /// Caller owns the returned memory.
 pub fn errorResponseWithDetails(allocator: std.mem.Allocator, code: []const u8, message: []const u8, details: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{{\"success\":false,\"error\":{{\"code\":\"{s}\",\"message\":\"{s}\",\"details\":{s}}}}}", .{ code, message, details });
+    return try std.fmt.allocPrint(allocator, "{{\"code\":\"{s}\",\"message\":\"{s}\",\"details\":{s}}}", .{ code, message, details });
 }
 
 /// Common error codes
@@ -97,44 +95,14 @@ pub fn formatNumber(value: i64) []const u8 {
 
 // ============== TESTS ==============
 
-test "success response returns data wrapped in success:true" {
+test "success response returns data as is" {
     const allocator = std.testing.allocator;
 
     const data = "{\"name\":\"project1\"}";
     const result = try success(allocator, data);
     defer allocator.free(result);
 
-    // Should return data wrapped in success:true envelope
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":true"));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"data\":{"));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"name\":\"project1\""));
-}
-
-test "error response returns error wrapped in success:false" {
-    const allocator = std.testing.allocator;
-
-    const result = try errorResponse(allocator, "ROADMAP_NOT_FOUND", "Roadmap not found");
-    defer allocator.free(result);
-
-    // Should contain success:false wrapper
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":false"));
-    // Should contain error fields inside error object
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"error\":{"));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"code\":\"ROADMAP_NOT_FOUND\""));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"message\":\"Roadmap not found\""));
-}
-
-test "error response with details" {
-    const allocator = std.testing.allocator;
-
-    const result = try errorResponseWithDetails(allocator, "INVALID_INPUT", "Missing field", "{\"field\":\"name\"}");
-    defer allocator.free(result);
-
-    // Should contain success:false wrapper with error object
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"success\":false"));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"error\":{"));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"code\":\"INVALID_INPUT\""));
-    try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "\"details\":{\"field\":\"name\"}"));
+    try std.testing.expectEqualStrings(data, result);
 }
 
 test "escapeString escapes special characters" {

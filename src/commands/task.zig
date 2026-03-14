@@ -50,16 +50,10 @@ pub fn addTask(allocator: std.mem.Allocator, input: TaskInput) ![]const u8 {
     const task_id = try queries.insertTask(conn, task);
     try queries.logOperation(conn, "TASK_CREATE", "TASK", task_id, now);
 
-    const created_task = try queries.getTaskById(allocator, conn, task_id);
-    defer {
-        var t = created_task;
-        t.deinit(allocator);
-    }
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d}}}", .{task_id});
+    defer allocator.free(response);
 
-    const task_json = try created_task.toJson(allocator);
-    defer allocator.free(task_json);
-
-    return json.success(allocator, task_json);
+    return json.success(allocator, response);
 }
 
 /// Lists tasks with optional filters
@@ -94,36 +88,8 @@ pub fn listTasks(allocator: std.mem.Allocator, filters: queries.TaskFilterOption
     const tasks_str = try std.mem.join(allocator, ",", json_tasks.items);
     defer allocator.free(tasks_str);
 
-    // Build filters info for response
-    var filter_parts: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer {
-        for (filter_parts.items) |p| allocator.free(p);
-        filter_parts.deinit(allocator);
-    }
-
-    if (filters.status) |s| {
-        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"status\":\"{s}\"", .{s.toString()}));
-    }
-    if (filters.priority_min) |p| {
-        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"priority_min\":{d}", .{p}));
-    }
-    if (filters.severity_min) |s| {
-        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"severity_min\":{d}", .{s}));
-    }
-    if (filters.limit) |l| {
-        try filter_parts.append(allocator, try std.fmt.allocPrint(allocator, "\"limit\":{d}", .{l}));
-    }
-
-    const filters_str = if (filter_parts.items.len > 0)
-        try std.mem.join(allocator, ",", filter_parts.items)
-    else
-        try allocator.dupe(u8, "");
-    defer allocator.free(filters_str);
-
-    const result = if (filters_str.len > 0)
-        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"filters\":{{{s}}},\"tasks\":[{s}]}}", .{ current, tasks.len, filters_str, tasks_str })
-    else
-        try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"tasks\":[{s}]}}", .{ current, tasks.len, tasks_str });
+    // Return array of tasks directly without wrapper
+    const result = try std.fmt.allocPrint(allocator, "[{s}]", .{tasks_str});
     defer allocator.free(result);
 
     return json.success(allocator, result);

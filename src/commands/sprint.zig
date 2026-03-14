@@ -47,10 +47,8 @@ pub fn addSprint(allocator: std.mem.Allocator, description: []const u8) ![]const
     // Log operation
     try queries.logOperation(conn, "SPRINT_CREATE", "SPRINT", sprint_id, now);
 
-    // Build response
-    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d},\"description\":\"{s}\",\"status\":\"PENDING\",\"created_at\":\"{s}\"}}", .{
-        sprint_id, description, now,
-    });
+    // Build response - simplified to return only the id
+    const response = try std.fmt.allocPrint(allocator, "{{\"id\":{d}}}", .{sprint_id});
     defer allocator.free(response);
 
     return json.success(allocator, response);
@@ -235,7 +233,8 @@ pub fn listSprints(allocator: std.mem.Allocator, status_filter: ?SprintStatus) !
     const sprints_str = try std.mem.join(allocator, ",", json_sprints.items);
     defer allocator.free(sprints_str);
 
-    const result = try std.fmt.allocPrint(allocator, "{{\"roadmap\":\"{s}\",\"count\":{d},\"sprints\":[{s}]}}", .{ current, sprints.len, sprints_str });
+    // Return array directly without wrapper
+    const result = try std.fmt.allocPrint(allocator, "[{s}]", .{sprints_str});
     defer allocator.free(result);
 
     return json.success(allocator, result);

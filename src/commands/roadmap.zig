@@ -16,8 +16,8 @@ pub fn listRoadmaps(allocator: std.mem.Allocator) ![]const u8 {
     // Check if directory exists
     var dir = std.fs.cwd().openDir(roadmaps_dir, .{ .iterate = true }) catch |err| {
         if (err == error.FileNotFound) {
-            // Directory doesn't exist, return empty list
-            return json.success(allocator, "{\"count\":0,\"roadmaps\":[]}");
+            // Directory doesn't exist, return empty array
+            return json.success(allocator, "[]");
         }
         return json.errorResponse(allocator, "SYSTEM_ERROR", "Failed to open roadmaps directory");
     };
@@ -131,8 +131,8 @@ pub fn createRoadmap(allocator: std.mem.Allocator, name: []const u8, force: bool
     // Log operation to audit table
     try queries.logOperation(conn, "ROADMAP_CREATE", "ROADMAP", 0, now);
 
-    // Build response
-    const response = try std.fmt.allocPrint(allocator, "{{\"name\":\"{s}\",\"path\":\"~/.roadmaps/{s}.db\",\"created_at\":\"{s}\"}}", .{ name, name, now });
+    // Build response - simplified to return only the name
+    const response = try std.fmt.allocPrint(allocator, "{{\"name\":\"{s}\"}}", .{name});
     defer allocator.free(response);
 
     return json.success(allocator, response);
@@ -271,7 +271,8 @@ fn buildRoadmapListJson(allocator: std.mem.Allocator, roadmaps: []const RoadmapI
     const roadmaps_json = try std.mem.join(allocator, ",", json_parts.items);
     defer allocator.free(roadmaps_json);
 
-    const result = try std.fmt.allocPrint(allocator, "{{\"count\":{d},\"roadmaps\":[{s}]}}", .{ roadmaps.len, roadmaps_json });
+    // Return array directly without wrapper
+    const result = try std.fmt.allocPrint(allocator, "[{s}]", .{roadmaps_json});
     defer allocator.free(result);
 
     return json.success(allocator, result);
