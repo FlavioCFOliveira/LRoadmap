@@ -13,6 +13,7 @@ This directory contains the complete technical specification for LRoadmap - a CL
 | [DATABASE.md](./DATABASE.md) | SQLite schema, tables, indexes, and relationships |
 | [DATA_FORMATS.md](./DATA_FORMATS.md) | JSON output formats, ISO 8601 date conventions, and data types |
 | [COMMANDS_REFERENCE.md](./COMMANDS_REFERENCE.md) | Complete command reference with examples |
+| [HELP_EXAMPLES.md](./HELP_EXAMPLES.md) | Help output format examples for all commands and error messages |
 
 ## Technology Stack
 
