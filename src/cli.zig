@@ -581,12 +581,12 @@ fn handleTaskAdd(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for action flag");
                 std.process.exit(exit_code);
             }
-        } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
+        } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected-result")) {
             i += 1;
             if (i < args.len) {
                 expected_result = args[i];
             } else {
-                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected-result flag");
                 std.process.exit(exit_code);
             }
         }
@@ -684,12 +684,12 @@ fn handleTaskEdit(allocator: std.mem.Allocator, args: []const []const u8) !void 
                 const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for action flag");
                 std.process.exit(exit_code);
             }
-        } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected")) {
+        } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expected-result")) {
             i += 1;
             if (i < args.len) {
                 updates.expected_result = args[i];
             } else {
-                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected flag");
+                const exit_code = printError(allocator, "INVALID_INPUT", "Missing value for expected-result flag");
                 std.process.exit(exit_code);
             }
         }
